@@ -1,0 +1,1 @@
+# Add outsourced product barcode patterns here using the app's local copy.

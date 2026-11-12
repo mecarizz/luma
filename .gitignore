@@ -1,0 +1,31 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+
+# Python and build products
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+/build/
+/dist/
+
+# Local business data, credentials, order state, and generated files
+/data/
+/products.json
+/outsourced_products.txt
+/unknown_products.json
+/printed_packages.json
+/watcher.log
+/labels_out/
+/outsourced_labels/
+/backups/
+/archive/
+/backup_original/
+/luma_data.db
+*.sqlite
+*.sqlite3
+*.db
+/auto.py
