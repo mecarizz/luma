@@ -1,7 +1,8 @@
 import sys
+from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QThread, QTimer, Signal
+from PySide6.QtCore import QSettings, QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
@@ -10,11 +11,22 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QHBoxLayout,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
 )
 
 from core.paths import is_frozen
 from core.i18n import ask_yes_no, tr
-from core.updates import UpdateRelease, download_update, get_latest_release, launch_update
+from core.updates import (
+    UpdateRelease,
+    download_update,
+    get_latest_release,
+    install_update,
+    launch_update,
+)
 from core.version import VERSION
 from ui_dashboard import DashboardTab
 from ui_sellers import SellersTab
@@ -22,6 +34,7 @@ from ui_catalog import CatalogTab
 from ui_logs import LogsTab
 from ui_orders import OrdersTab
 from app_controller import AppController
+from ui_theme import DARK_STYLESHEET
 
 
 class _ReleaseCheckWorker(QThread):
@@ -45,7 +58,10 @@ class _UpdateDownloadWorker(QThread):
 
     def run(self):
         try:
-            self.completed.emit(download_update(self.release))
+            staged_executable = download_update(self.release)
+            self.completed.emit(
+                install_update(staged_executable, self.release.version)
+            )
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -56,27 +72,98 @@ class LumaMainWindow(QMainWindow):
         self.settings = QSettings("Luma", "Luma")
         saved_language = self.settings.value("language", "en")
         self.language = saved_language if saved_language in ("en", "tr") else "en"
-        self.resize(1024, 768)
+        self.resize(1440, 900)
+        self.setMinimumSize(1050, 700)
+        self.setStyleSheet(DARK_STYLESHEET)
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        root = QWidget()
+        root.setObjectName("appRoot")
+        self.setCentralWidget(root)
+        shell = QHBoxLayout(root)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(224)
+        side = QVBoxLayout(self.sidebar)
+        side.setContentsMargins(16, 24, 16, 18)
+        side.setSpacing(8)
+
+        brand_row = QHBoxLayout()
+        mark = QLabel("◈")
+        mark.setObjectName("brandMark")
+        brand = QLabel("Luma")
+        brand.setObjectName("brand")
+        brand_row.addWidget(mark)
+        brand_row.addWidget(brand)
+        brand_row.addStretch()
+        side.addLayout(brand_row)
+        self.tagline = QLabel()
+        self.tagline.setObjectName("muted")
+        self.tagline.setStyleSheet("font-size: 7pt; letter-spacing: 1px;")
+        side.addWidget(self.tagline)
+        side.addSpacing(28)
 
         self.tabs = QTabWidget()
-        
+        self.tabs.tabBar().hide()
+        self.tabs.setDocumentMode(True)
         self.tab_dashboard = DashboardTab()
         self.tab_sellers = SellersTab()
         self.tab_orders = OrdersTab()
         self.tab_catalog = CatalogTab()
         self.tab_logs = LogsTab()
+        self._pages = [
+            ("⌂", "Dashboard", self.tab_dashboard),
+            ("▣", "Orders & Labels", self.tab_orders),
+            ("♙", "Seller Config", self.tab_sellers),
+            ("▦", "Product Catalog", self.tab_catalog),
+            ("▤", "System Logs", self.tab_logs),
+        ]
+        self.nav_buttons = []
+        for icon, title, page in self._pages:
+            self.tabs.addTab(page, title)
+            button = QPushButton(f"{icon}   {title}")
+            button.setObjectName("navButton")
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(partial(self.navigate, len(self.nav_buttons)))
+            side.addWidget(button)
+            self.nav_buttons.append(button)
+        side.addStretch()
 
-        self.tabs.addTab(self.tab_dashboard, "Dashboard")
-        self.tabs.addTab(self.tab_orders, "Orders & Labels")
-        self.tabs.addTab(self.tab_sellers, "Seller Config")
-        self.tabs.addTab(self.tab_catalog, "Product Catalog")
-        self.tabs.addTab(self.tab_logs, "System Logs")
+        health = QFrame()
+        health.setObjectName("panel")
+        health_layout = QVBoxLayout(health)
+        health_layout.setContentsMargins(12, 12, 12, 12)
+        self.health_title = QLabel()
+        self.health_title.setObjectName("accent")
+        self.health_note = QLabel("Luma services")
+        self.health_note.setObjectName("muted")
+        health_layout.addWidget(self.health_title)
+        health_layout.addWidget(self.health_note)
+        side.addWidget(health)
+        version_label = QLabel(f"Version {VERSION}")
+        version_label.setObjectName("muted")
+        side.addWidget(version_label)
+        shell.addWidget(self.sidebar)
 
-        layout.addWidget(self.tabs)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(28, 22, 28, 20)
+        content_layout.setSpacing(16)
+        top = QHBoxLayout()
+        self.page_heading = QLabel()
+        self.page_heading.setObjectName("pageTitle")
+        top.addWidget(self.page_heading)
+        top.addStretch()
+        self.monitoring_label = QLabel()
+        self.monitoring_label.setObjectName("accent")
+        top.addWidget(self.monitoring_label)
+        content_layout.addLayout(top)
+        self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        content_layout.addWidget(self.tabs)
+        shell.addWidget(content, 1)
 
         self._release_check_worker = None
         self._update_download_worker = None
@@ -98,11 +185,14 @@ class LumaMainWindow(QMainWindow):
         self.update_action = self.help_menu.addAction("")
         self.update_action.triggered.connect(self.check_for_updates)
         self.set_language(self.language)
+        self.navigate(0)
 
         self.controller = None
         try:
             self.controller = AppController(self)
+            self.set_monitoring_state(True)
         except (OSError, RuntimeError, ValueError) as exc:
+            self.set_monitoring_state(False)
             QMessageBox.critical(
                 self,
                 tr("Seller configuration error", self.language),
@@ -117,6 +207,21 @@ class LumaMainWindow(QMainWindow):
         # afterward so the catalog UI sees products.json copied from legacy installs.
         self.tab_catalog.refresh()
         QTimer.singleShot(1200, self.check_for_updates_on_startup)
+
+    def navigate(self, index: int) -> None:
+        self.tabs.setCurrentIndex(index)
+        for button_index, button in enumerate(self.nav_buttons):
+            button.setChecked(button_index == index)
+        title = self._pages[index][1]
+        self.page_heading.setText(tr(title, self.language))
+
+    def set_monitoring_state(self, active: bool) -> None:
+        self.health_title.setText(
+            tr("SYSTEM READY" if active else "SYSTEM UNAVAILABLE", self.language)
+        )
+        self.monitoring_label.setText(
+            tr("Monitoring active" if active else "Monitoring unavailable", self.language)
+        )
 
     def check_for_updates_on_startup(self) -> None:
         """Check quietly for updates after the packaged application has opened."""
@@ -188,26 +293,26 @@ class LumaMainWindow(QMainWindow):
         self._update_download_worker = None
         self.menuBar().setEnabled(True)
 
-    def _on_update_downloaded(self, staged_path):
+    def _on_update_downloaded(self, installed_path):
         answer = ask_yes_no(
             self,
             "Update ready",
-            "The update passed its SHA-256 check and is ready to install. Restart Luma now?",
+            "The update is installed in your user folder, and a desktop shortcut was created. Start it now?",
             self.language,
         )
         if not answer:
             QMessageBox.information(
                 self,
-                tr("Update downloaded", self.language),
+                tr("Update installed", self.language),
                 tr(
-                    "The verified update is staged at:\n{path}\nRestart the app to install it later.",
+                    "The update is installed at:\n{path}\nUse the new Luma shortcut on your desktop to open it.",
                     self.language,
-                ).format(path=Path(staged_path)),
+                ).format(path=Path(installed_path)),
             )
             return
 
         try:
-            launch_update(Path(staged_path))
+            launch_update(Path(installed_path))
         except (OSError, RuntimeError) as exc:
             QMessageBox.critical(
                 self,
@@ -241,7 +346,13 @@ class LumaMainWindow(QMainWindow):
         )
         for index, title in enumerate(titles):
             self.tabs.setTabText(index, tr(title, language))
+            self.nav_buttons[index].setText(
+                f"{self._pages[index][0]}   {tr(title, language)}"
+            )
 
+        self.page_heading.setText(
+            tr(titles[self.tabs.currentIndex()], language)
+        )
         self.tab_dashboard.set_language(language)
         self.tab_orders.set_language(language)
         self.tab_sellers.set_language(language)
@@ -249,6 +360,11 @@ class LumaMainWindow(QMainWindow):
         self.language_menu.setTitle(tr("Language", language))
         self.help_menu.setTitle(tr("Help", language))
         self.update_action.setText(tr("Check for Updates", language))
+        self.tagline.setText(tr("MANAGE  ·  AUTOMATE  ·  GROW", language))
+        self.health_note.setText(tr("Luma services", language))
+        self.set_monitoring_state(
+            self.controller is not None if hasattr(self, "controller") else False
+        )
         for code, action in self.language_actions.items():
             action.setChecked(code == language)
 

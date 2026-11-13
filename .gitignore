@@ -25,6 +25,8 @@ venv/
 /archive/
 /backup_original/
 /103/
+/ui revamp/
+/catalog fix/
 /luma_data.db
 *.sqlite
 *.sqlite3

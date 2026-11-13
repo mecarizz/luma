@@ -1,13 +1,14 @@
 """Check, verify, and stage Luma updates from public GitHub releases."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import subprocess
 import sys
-import tempfile
 import zipfile
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -166,37 +167,95 @@ def download_update(release: UpdateRelease) -> Path:
                 path.unlink()
 
 
-def launch_update(staged_executable: Path) -> None:
-    """Launch a small Windows command helper that replaces the app after exit."""
+def _powershell_literal(value: str) -> str:
+    """Return a single-quoted PowerShell string literal."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _create_desktop_shortcut(executable: Path, version: str) -> None:
+    shortcut_name = f"Luma v{version}.lnk"
+    script = "\n".join(
+        (
+            "$ErrorActionPreference = 'Stop'",
+            "$shell = New-Object -ComObject WScript.Shell",
+            "$desktop = $shell.SpecialFolders('Desktop')",
+            f"$target = {_powershell_literal(str(executable))}",
+            f"$name = {_powershell_literal(shortcut_name)}",
+            "$shortcutPath = Join-Path $desktop $name",
+            "$shortcut = $shell.CreateShortcut($shortcutPath)",
+            "$shortcut.TargetPath = $target",
+            "$shortcut.WorkingDirectory = Split-Path -Parent $target",
+            "$shortcut.Description = 'Luma Trendyol Manager'",
+            "$shortcut.IconLocation = $target + ',0'",
+            "$shortcut.Save()",
+            "if (-not (Test-Path -LiteralPath $shortcutPath)) { throw 'Shortcut was not created.' }",
+        )
+    )
+    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            encoded_script,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if result.returncode:
+        details = (result.stderr or result.stdout).strip()
+        raise RuntimeError(
+            "Could not create the Luma desktop shortcut"
+            + (f": {details}" if details else ".")
+        )
+
+
+def install_update(staged_executable: Path, version: str) -> Path:
+    """Install a verified release into the current user's writable app-data folder."""
     if not getattr(sys, "frozen", False) or not sys.platform.startswith("win"):
         raise RuntimeError("Installing updates is supported only in the packaged Windows app.")
 
-    current_executable = Path(sys.executable).resolve()
-    if not current_executable.is_file() or not staged_executable.is_file():
-        raise FileNotFoundError("The current or downloaded Luma executable could not be found.")
+    if not staged_executable.is_file():
+        raise FileNotFoundError("The downloaded Luma executable could not be found.")
 
-    helper_path = Path(tempfile.gettempdir()) / f"luma-update-{os.getpid()}.cmd"
-    helper_path.write_text(
-        "\r\n".join(
-            (
-                "@echo off",
-                "setlocal DisableDelayedExpansion",
-                ":wait_for_luma",
-                'tasklist /FI "PID eq %~1" /NH | findstr /C:" %~1 " >nul',
-                "if not errorlevel 1 (",
-                "  timeout /t 1 /nobreak >nul",
-                "  goto wait_for_luma",
-                ")",
-                'move /Y "%~2" "%~3" >nul',
-                "if errorlevel 1 exit /b 1",
-                'start "" "%~3"',
-                'del "%~f0"',
-                "",
-            )
-        ),
-        encoding="ascii",
+    normalized_version = ".".join(str(part) for part in _version_tuple(version))
+    install_dir = get_data_path("app") / f"v{normalized_version}"
+    install_dir.mkdir(parents=True, exist_ok=True)
+    installed_executable = install_dir / "Luma.exe"
+    temporary_executable = install_dir / "Luma.exe.tmp"
+
+    try:
+        shutil.copy2(staged_executable, temporary_executable)
+        os.replace(temporary_executable, installed_executable)
+        _create_desktop_shortcut(installed_executable, normalized_version)
+    except Exception:
+        if temporary_executable.exists():
+            temporary_executable.unlink()
+        raise
+
+    staged_executable.unlink()
+    return installed_executable
+
+
+def launch_update(installed_executable: Path) -> None:
+    """Launch the installed per-user update without elevation."""
+    if not getattr(sys, "frozen", False) or not sys.platform.startswith("win"):
+        raise RuntimeError("Installing updates is supported only in the packaged Windows app.")
+    if not installed_executable.is_file():
+        raise FileNotFoundError("The installed Luma executable could not be found.")
+
+    flags = (
+        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0)
     )
-
-    command = f'"{helper_path}" "{os.getpid()}" "{staged_executable}" "{current_executable}"'
-    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-    subprocess.Popen(["cmd.exe", "/c", command], creationflags=flags, close_fds=True)
+    subprocess.Popen(
+        [str(installed_executable)],
+        cwd=str(installed_executable.parent),
+        creationflags=flags,
+        close_fds=True,
+    )

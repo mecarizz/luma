@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import tempfile
@@ -103,6 +104,79 @@ class TestUpdates(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "SHA-256"):
                         updates.download_update(release)
             self.assertFalse((Path(directory) / "Luma.new.exe").exists())
+
+    def test_install_update_uses_versioned_per_user_path_and_creates_shortcut(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            staged = data_dir / "updates" / "Luma.new.exe"
+            staged.parent.mkdir()
+            staged.write_bytes(b"new executable")
+            old_executable = data_dir / "Program Files" / "Luma.exe"
+            old_executable.parent.mkdir()
+            old_executable.write_bytes(b"old executable")
+
+            with patch.object(
+                updates,
+                "get_data_path",
+                side_effect=lambda name: data_dir / name,
+            ), \
+                    patch.object(updates.sys, "frozen", True, create=True), \
+                    patch.object(updates.sys, "platform", "win32"), \
+                    patch.object(updates, "_create_desktop_shortcut") as create_shortcut:
+                installed = updates.install_update(staged, "1.0.4")
+
+            self.assertEqual(installed, data_dir / "app" / "v1.0.4" / "Luma.exe")
+            self.assertEqual(installed.read_bytes(), b"new executable")
+            self.assertEqual(old_executable.read_bytes(), b"old executable")
+            self.assertFalse(staged.exists())
+            create_shortcut.assert_called_once_with(installed, "1.0.4")
+
+    def test_install_update_rejects_invalid_version_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            staged = data_dir / "Luma.new.exe"
+            staged.write_bytes(b"new executable")
+
+            with patch.object(
+                updates,
+                "get_data_path",
+                side_effect=lambda name: data_dir / name,
+            ), \
+                    patch.object(updates.sys, "frozen", True, create=True), \
+                    patch.object(updates.sys, "platform", "win32"):
+                with self.assertRaisesRegex(ValueError, "Unsupported release version"):
+                    updates.install_update(staged, "../outside")
+
+            self.assertFalse((data_dir / "app").exists())
+
+    def test_desktop_shortcut_uses_escaped_encoded_powershell(self):
+        result = Mock(returncode=0, stdout="", stderr="")
+        executable = Path("C:/Users/O'Brien/AppData/Local/Luma/app/v1.0.4/Luma.exe")
+
+        with patch.object(updates.subprocess, "run", return_value=result) as run:
+            updates._create_desktop_shortcut(executable, "1.0.4")
+
+        command = run.call_args.args[0]
+        script = base64.b64decode(command[-1]).decode("utf-16le")
+        self.assertIn("O''Brien", script)
+        self.assertIn("Luma v1.0.4.lnk", script)
+        self.assertIn("SpecialFolders('Desktop')", script)
+        self.assertNotIn("runas", command)
+
+    def test_launch_update_starts_installed_executable_without_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "Luma.exe"
+            executable.write_bytes(b"new executable")
+
+            with patch.object(updates.sys, "frozen", True, create=True), \
+                    patch.object(updates.sys, "platform", "win32"), \
+                    patch.object(updates.subprocess, "Popen") as popen:
+                updates.launch_update(executable)
+
+            args, kwargs = popen.call_args
+            self.assertEqual(args[0], [str(executable)])
+            self.assertEqual(kwargs["cwd"], str(executable.parent))
+            self.assertTrue(kwargs["close_fds"])
 
 
 if __name__ == "__main__":

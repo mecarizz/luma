@@ -7,16 +7,16 @@ class StatusCard(QFrame):
         super().__init__()
         self.setFrameShape(QFrame.StyledPanel)
         self.setFrameShadow(QFrame.Raised)
-        self.setStyleSheet("background-color: #f0f0f0; border-radius: 5px; padding: 10px;")
+        self.setObjectName("metricCard")
         self._title = title
         self.language = "en"
         
         layout = QVBoxLayout(self)
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet("font-weight: bold; color: #555;")
+        self.lbl_title.setObjectName("metricTitle")
         
         self.lbl_value = QLabel(initial_value)
-        self.lbl_value.setStyleSheet("font-size: 24px; font-weight: bold;")
+        self.lbl_value.setObjectName("metricValue")
         
         layout.addWidget(self.lbl_title)
         layout.addWidget(self.lbl_value)

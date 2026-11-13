@@ -52,15 +52,20 @@ The executable and release ZIP are created under `dist/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
 the ZIP, and includes its SHA-256 checksum. In the packaged app, Luma checks for
 updates shortly after startup and asks before downloading or installing one.
-You can also choose **Help > Check for Updates** to check manually. Releases
-are public, so only publish data that is intended to be public.
+Verified updates are installed to a versioned folder under
+`%LOCALAPPDATA%\Luma\app`, and a version-specific desktop shortcut is created.
+This per-user install does not require administrator permission and does not
+overwrite the currently running executable. You can launch the new version
+immediately or use its desktop shortcut later. You can also choose
+**Help > Check for Updates** to check manually. Releases are public, so only
+publish data that is intended to be public.
 
 ## Project layout
 
