@@ -28,8 +28,10 @@ except ImportError:
 # --------------------------------------------------------------------------- #
 DEFAULT_LABEL_SIZE = "100x100"
 DEFAULT_LABEL_SHIFT_Y_MM = 29.0
-DEFAULT_PRINTER_NAME = "Xprinter XP-470B"
-DEFAULT_SUMATRA_PATH = r"C:\Users\pc\AppData\Local\SumatraPDF\SumatraPDF.exe"
+DEFAULT_PRINTER_NAME = ""
+DEFAULT_SUMATRA_PATH = str(
+    Path.home() / "AppData" / "Local" / "SumatraPDF" / "SumatraPDF.exe"
+)
 DEFAULT_BASE_URL = "https://apigw.trendyol.com/integration"
 DEFAULT_DHL_CODE = "DHLECOMMP"
 

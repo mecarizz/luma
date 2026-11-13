@@ -75,6 +75,8 @@ _TURKISH: Dict[str, str] = {
     "API Key:": "API Anahtarı:",
     "API Secret:": "API Gizli Anahtarı:",
     "Default Cargo:": "Varsayılan Kargo:",
+    "Printer:": "Yazıcı:",
+    "Use system default printer": "Sistemin varsayılan yazıcısını kullan",
     "Save Seller Configuration": "Satıcı Ayarlarını Kaydet",
     "Seller configuration": "Satıcı ayarları",
     "A seller with this ID already exists. Select it to edit the saved profile.": "Bu ID ile kayıtlı bir satıcı zaten var. Düzenlemek için kayıtlı profili seçin.",

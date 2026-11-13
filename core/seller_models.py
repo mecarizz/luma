@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.security import decrypt_secret, encrypt_secret
@@ -58,8 +59,10 @@ class SellerProfile:
     include_footer: bool = False
 
     # 6. Printing
-    printer_name: str = "Xprinter XP-470B"
-    sumatra_path: str = r"C:\Users\pc\AppData\Local\SumatraPDF\SumatraPDF.exe"
+    printer_name: str = ""
+    sumatra_path: str = str(
+        Path.home() / "AppData" / "Local" / "SumatraPDF" / "SumatraPDF.exe"
+    )
     auto_print: bool = True
 
     # 7. Catalog & Outsourced Isolation

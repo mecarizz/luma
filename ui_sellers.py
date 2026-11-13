@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtPrintSupport import QPrinterInfo
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -56,6 +57,9 @@ class SellersTab(QWidget):
         self.combo_cargo = QComboBox()
         for code, label in CARGO_PROVIDERS.items():
             self.combo_cargo.addItem(label, code)
+
+        self.combo_printer = QComboBox()
+        self._refresh_printers()
         
         self.check_auto_switch = QCheckBox("Enable Auto-Switch Cargo on Failure")
         self.check_monitoring = QCheckBox("Enable order monitoring")
@@ -69,6 +73,7 @@ class SellersTab(QWidget):
             ("API Key:", self.input_api_key),
             ("API Secret:", self.input_api_secret),
             ("Default Cargo:", self.combo_cargo),
+            ("Printer:", self.combo_printer),
         ):
             label = QLabel(key)
             self._form_labels[key] = label
@@ -124,6 +129,24 @@ class SellersTab(QWidget):
             self.combo_cargo.addItem(tr(label, language), code)
         index = self.combo_cargo.findData(selected_cargo)
         self.combo_cargo.setCurrentIndex(max(0, index))
+        self._refresh_printers()
+
+    def _refresh_printers(self, selected: str | None = None) -> None:
+        if selected is None and hasattr(self, "combo_printer"):
+            selected = self.combo_printer.currentData()
+        self.combo_printer.clear()
+        self.combo_printer.addItem(
+            tr("Use system default printer", self.language),
+            "",
+        )
+        for printer in sorted(
+            QPrinterInfo.availablePrinters(),
+            key=lambda item: item.printerName().casefold(),
+        ):
+            name = printer.printerName()
+            self.combo_printer.addItem(name, name)
+        index = self.combo_printer.findData(selected or "")
+        self.combo_printer.setCurrentIndex(max(0, index))
 
     def set_manager(self, seller_manager: SellerManager) -> None:
         self.seller_manager = seller_manager
@@ -167,6 +190,7 @@ class SellersTab(QWidget):
         self.check_auto_switch.setChecked(profile.cargo_switch_enabled)
         self.check_monitoring.setChecked(profile.monitoring_enabled)
         self.check_auto_print.setChecked(profile.auto_print)
+        self._refresh_printers(profile.printer_name)
 
     def _new_seller(self) -> None:
         self.seller_list.clearSelection()
@@ -181,6 +205,7 @@ class SellersTab(QWidget):
         self.check_auto_switch.setChecked(True)
         self.check_monitoring.setChecked(True)
         self.check_auto_print.setChecked(True)
+        self._refresh_printers("")
 
     def _save_seller(self) -> None:
         seller_id = self.input_seller_id.text().strip()
@@ -198,6 +223,7 @@ class SellersTab(QWidget):
             api_key=self.input_api_key.text() or (old_profile.api_key if old_profile else ""),
             api_secret=self.input_api_secret.text() or (old_profile.api_secret if old_profile else ""),
             preferred_cargo=self.combo_cargo.currentData(),
+            printer_name=self.combo_printer.currentData() or "",
             cargo_switch_enabled=self.check_auto_switch.isChecked(),
             monitoring_enabled=self.check_monitoring.isChecked(),
             auto_print=self.check_auto_print.isChecked(),

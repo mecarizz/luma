@@ -17,10 +17,10 @@ from core.config import (
 
 class TestConfig(unittest.TestCase):
     def test_hardware_defaults(self):
-        """Verify that tested physical printer constraints are strictly preserved."""
+        """Verify label layout defaults and use of the client system printer."""
         self.assertEqual(DEFAULT_LABEL_SIZE, "100x100")
         self.assertEqual(DEFAULT_LABEL_SHIFT_Y_MM, 29.0)
-        self.assertEqual(DEFAULT_PRINTER_NAME, "Xprinter XP-470B")
+        self.assertEqual(DEFAULT_PRINTER_NAME, "")
         self.assertIn("SumatraPDF.exe", DEFAULT_SUMATRA_PATH)
 
     def test_parse_label_size(self):

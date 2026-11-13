@@ -58,6 +58,7 @@ from reportlab.pdfgen import canvas
 
 from core.catalog import ProductCatalog
 from core.classifier import OutsourcedClassifier
+from core.config import DEFAULT_SUMATRA_PATH
 from core.paths import get_data_path
 from core.unknown_tracker import UnknownProductTracker
 
@@ -690,11 +691,11 @@ def send_to_printer(pdf_path, printer=None):
     pdf_path = os.path.abspath(pdf_path)
     try:
         if sys.platform.startswith("win"):
-            sumatra = os.getenv("SUMATRA_PATH", r"C:\Users\pc\AppData\Local\SumatraPDF\SumatraPDF.exe")
+            sumatra = os.getenv("SUMATRA_PATH", DEFAULT_SUMATRA_PATH)
             if not (sumatra and os.path.exists(sumatra)):
                 print(f"SUMATRA_PATH ({sumatra}) must point to SumatraPDF.exe (the file, not the folder).")
                 return False
-            printer_to_use = printer or os.getenv("PRINTER_NAME", "Xprinter XP-470B")
+            printer_to_use = os.getenv("PRINTER_NAME") if printer is None else printer
             target = ["-print-to", printer_to_use] if printer_to_use else ["-print-to-default"]
             return subprocess.run([sumatra, *target, "-print-settings", "noscale", "-silent", pdf_path],
                                   timeout=60).returncode == 0
@@ -904,7 +905,7 @@ def main():
     print(f"{len(packages)} labels -> {opts.out}")
 
     if opts.printer and not opts.preview:
-        printer = os.getenv("PRINTER_NAME", "Xprinter XP-470B") if opts.printer == "__env__" else opts.printer
+        printer = os.getenv("PRINTER_NAME") if opts.printer == "__env__" else opts.printer
         ok = send_to_printer(opts.out, printer)
         print("sent to printer" if ok else "PRINT FAILED (see message above)")
     elif opts.preview:

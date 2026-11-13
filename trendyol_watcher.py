@@ -434,7 +434,7 @@ def main():
     ap.add_argument("--print-on-fail", action="store_true",
                     help="if switching carrier keeps failing, print the original label anyway")
     ap.add_argument("--printer", default=os.getenv("PRINTER_NAME", DEFAULT_PRINTER_NAME),
-                    help=f"printer name (default: {DEFAULT_PRINTER_NAME} or PRINTER_NAME in .env)")
+                    help="printer name (default: system default printer or PRINTER_NAME in .env)")
     # label look - same options as trendyol_labels.py
     ap.add_argument("--size", default=os.getenv("LABEL_SIZE", DEFAULT_LABEL_SIZE),
                     help=f"label dimensions WxH (default: {DEFAULT_LABEL_SIZE})")

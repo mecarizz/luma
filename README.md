@@ -38,6 +38,10 @@ tracking barcodes. The automatic watcher pauses during these manual operations.
 
 The application interface supports English and Turkish. Use the **Language**
 menu to change languages; the selection is saved for the next launch.
+Choose each seller's printer in **Seller Config**. The list comes from printers
+installed on the current PC; **Use system default printer** follows Windows'
+default printer. For command-line use, `PRINTER_NAME` remains an optional
+override.
 
 ## Build a Windows release
 
@@ -52,8 +56,8 @@ The executable and release ZIP are created under `dist/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.4
-git push origin v1.0.4
+git tag v1.0.5
+git push origin v1.0.5
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
