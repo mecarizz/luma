@@ -32,6 +32,9 @@ or a carrier from the custom selection. Luma switches the selected packages in
 Trendyol and refreshes them before printing so the labels use the new carrier's
 tracking barcodes. The automatic watcher pauses during these manual operations.
 
+The application interface supports English and Turkish. Use the **Language**
+menu to change languages; the selection is saved for the next launch.
+
 ## Build a Windows release
 
 Install the build dependencies and run the build script:
@@ -50,10 +53,10 @@ git push origin v1.0.0
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
-the ZIP, and includes its SHA-256 checksum. In the packaged app, choose
-**Help > Check for Updates** to check for a release and install it after
-confirmation. Releases are public, so only publish data that is intended to be
-public.
+the ZIP, and includes its SHA-256 checksum. In the packaged app, Luma checks for
+updates shortly after startup and asks before downloading or installing one.
+You can also choose **Help > Check for Updates** to check manually. Releases
+are public, so only publish data that is intended to be public.
 
 ## Project layout
 

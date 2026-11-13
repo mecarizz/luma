@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.manual_orders import prepare_package_for_cargo
+from core.i18n import ask_yes_no, tr
 from core.seller_models import CARGO_PROVIDERS, SellerProfile
 from worker import SellerWorker
 
@@ -132,12 +133,16 @@ class OrdersTab(QWidget):
         self._profiles: List[SellerProfile] = []
         self._packages: List[Dict[str, Any]] = []
         self._worker: Optional[QThread] = None
+        self.language = "en"
+        self._status_template = "Fetch orders to choose packages for label printing."
+        self._status_values: Dict[str, Any] = {}
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         self.seller_combo = QComboBox()
         self.fetch_button = QPushButton("Fetch Orders")
-        controls.addWidget(QLabel("Seller:"))
+        self.seller_label = QLabel("Seller:")
+        controls.addWidget(self.seller_label)
         controls.addWidget(self.seller_combo, 1)
         controls.addWidget(self.fetch_button)
         layout.addLayout(controls)
@@ -173,7 +178,65 @@ class OrdersTab(QWidget):
         self.print_dhl_button.clicked.connect(lambda: self.print_selected("DHLECOMMP"))
         self.custom_cargo_button.clicked.connect(self.print_custom_selection)
         self.custom_cargo_combo.currentIndexChanged.connect(self._update_enabled)
+        self.set_language("en")
         self._update_enabled()
+
+    def set_language(self, language: str) -> None:
+        self.language = language
+        selected_seller = self.seller_combo.currentData()
+        self.seller_combo.clear()
+        self.seller_combo.addItem(tr("All sellers", language), None)
+        for profile in self._profiles:
+            self.seller_combo.addItem(
+                f"{profile.display_tag} ({profile.seller_id})",
+                profile.seller_id,
+            )
+        index = self.seller_combo.findData(selected_seller)
+        if index >= 0:
+            self.seller_combo.setCurrentIndex(index)
+
+        self.fetch_button.setText(tr("Fetch Orders", language))
+        self.seller_label.setText(tr("Seller:", language))
+        self.status_label.setText(tr(self._status_template, language).format(**self._status_values))
+        self.order_table.setHorizontalHeaderLabels([
+            tr("Select", language),
+            tr("Seller", language),
+            tr("Order No.", language),
+            tr("Package ID", language),
+            tr("Customer", language),
+            tr("Current Cargo", language),
+            tr("Status", language),
+        ])
+        for row, package in enumerate(self._packages):
+            cargo_item = self.order_table.item(row, 5)
+            status_item = self.order_table.item(row, 6)
+            if cargo_item is not None:
+                cargo = str(
+                    package.get("cargoProviderName")
+                    or package.get("cargoProviderCode")
+                    or "Unknown"
+                )
+                cargo_item.setText(tr(cargo, language))
+            if status_item is not None:
+                status_item.setText(tr(str(package.get("status") or ""), language))
+        self.print_tex_button.setText(tr("Print as TEX", language))
+        self.print_dhl_button.setText(tr("Print as DHL", language))
+
+        target = self.custom_cargo_combo.currentData()
+        self.custom_cargo_combo.clear()
+        self.custom_cargo_combo.addItem(tr("Select custom cargo...", language), None)
+        for code, name in CARGO_PROVIDERS.items():
+            self.custom_cargo_combo.addItem(tr(name, language), code)
+        cargo_index = self.custom_cargo_combo.findData(target)
+        if cargo_index >= 0:
+            self.custom_cargo_combo.setCurrentIndex(cargo_index)
+        self.custom_cargo_button.setText(tr("Print as selected cargo", language))
+        self._update_enabled()
+
+    def _set_status(self, template: str, **values: Any) -> None:
+        self._status_template = template
+        self._status_values = values
+        self.status_label.setText(tr(template, self.language).format(**values))
 
     def set_manager(self, seller_manager) -> None:
         self.seller_manager = seller_manager
@@ -183,7 +246,7 @@ class OrdersTab(QWidget):
         selected = self.seller_combo.currentData()
         self._profiles = self.seller_manager.list_all() if self.seller_manager else []
         self.seller_combo.clear()
-        self.seller_combo.addItem("All sellers", None)
+        self.seller_combo.addItem(tr("All sellers", self.language), None)
         for profile in self._profiles:
             self.seller_combo.addItem(f"{profile.display_tag} ({profile.seller_id})", profile.seller_id)
         index = self.seller_combo.findData(selected)
@@ -219,9 +282,13 @@ class OrdersTab(QWidget):
     def fetch_orders(self) -> None:
         profiles = self._selected_profiles()
         if not profiles:
-            QMessageBox.information(self, "Fetch orders", "No seller profiles are configured.")
+            QMessageBox.information(
+                self,
+                tr("Fetch orders", self.language),
+                tr("No seller profiles are configured.", self.language),
+            )
             return
-        self.status_label.setText("Fetching packages using each seller's configured statuses and lookback...")
+        self._set_status("Fetching packages using each seller's configured statuses and lookback...")
         worker = _FetchOrdersWorker(profiles)
         worker.completed.connect(self._on_orders_fetched)
         self._start_worker(worker)
@@ -238,8 +305,11 @@ class OrdersTab(QWidget):
                 str(package.get("orderNumber") or ""),
                 str(package.get("shipmentPackageId") or ""),
                 str(address.get("fullName") or ""),
-                str(package.get("cargoProviderName") or package.get("cargoProviderCode") or "Unknown"),
-                str(package.get("status") or ""),
+                tr(
+                    str(package.get("cargoProviderName") or package.get("cargoProviderCode") or "Unknown"),
+                    self.language,
+                ),
+                tr(str(package.get("status") or ""), self.language),
             )
             row = self.order_table.rowCount()
             self.order_table.insertRow(row)
@@ -250,12 +320,23 @@ class OrdersTab(QWidget):
             for column, value in enumerate(values[1:], 1):
                 self.order_table.setItem(row, column, QTableWidgetItem(value))
 
-        summary = f"Found {len(self._packages)} package(s). Select the orders to print."
+        failed_text = ""
         if errors:
-            summary += f" {len(errors)} seller request(s) failed."
-        self.status_label.setText(summary)
+            failed_text = " " + tr(
+                "{count} seller request(s) failed.",
+                self.language,
+            ).format(count=len(errors))
+        self._set_status(
+            "Found {count} package(s). Select the orders to print.{failed_text}",
+            count=len(self._packages),
+            failed_text=failed_text,
+        )
         if errors:
-            QMessageBox.warning(self, "Some orders could not be fetched", "\n".join(errors))
+            QMessageBox.warning(
+                self,
+                tr("Some orders could not be fetched", self.language),
+                "\n".join(errors),
+            )
         self._update_enabled()
 
     def print_custom_selection(self) -> None:
@@ -266,36 +347,45 @@ class OrdersTab(QWidget):
     def print_selected(self, target_cargo: str) -> None:
         packages = self._selected_packages()
         if not packages:
-            QMessageBox.information(self, "Print labels", "Select at least one package first.")
+            QMessageBox.information(
+                self,
+                tr("Print labels", self.language),
+                tr("Select at least one package first.", self.language),
+            )
             return
         label = CARGO_PROVIDERS.get(target_cargo, target_cargo)
-        answer = QMessageBox.question(
+        answer = ask_yes_no(
             self,
             "Change cargo and print labels",
-            f"Switch the selected package(s) to {label} in Trendyol and print their refreshed labels?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            "Switch the selected package(s) to {cargo} in Trendyol and print their refreshed labels?",
+            self.language,
+            cargo=label,
         )
-        if answer != QMessageBox.Yes:
+        if not answer:
             return
 
-        self.status_label.setText(f"Preparing and printing {len(packages)} package(s) as {label}...")
+        self._set_status(
+            "Preparing and printing {count} package(s) as {cargo}...",
+            count=len(packages),
+            cargo=label,
+        )
         worker = _PrintOrdersWorker(packages, self._profiles, target_cargo)
         worker.completed.connect(self._on_labels_printed)
         self._start_worker(worker)
 
     def _on_labels_printed(self, result: Tuple[int, List[str]]) -> None:
         printed_count, errors = result
-        message = f"Printed {printed_count} label(s)."
+        message = tr("Printed {count} label(s).", self.language).format(count=printed_count)
         if errors:
             message += "\n\n" + "\n".join(errors)
-        self.status_label.setText(
-            f"Printed {printed_count} label(s)." if not errors else "Printing finished with errors."
+        self._set_status(
+            "Printed {count} label(s)." if not errors else "Printing finished with errors.",
+            count=printed_count,
         )
         if errors:
-            QMessageBox.warning(self, "Label printing results", message)
+            QMessageBox.warning(self, tr("Label printing results", self.language), message)
         else:
-            QMessageBox.information(self, "Label printing complete", message)
+            QMessageBox.information(self, tr("Label printing complete", self.language), message)
 
     def _start_worker(self, worker: QThread) -> None:
         self._worker = worker

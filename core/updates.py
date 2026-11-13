@@ -16,7 +16,7 @@ import requests
 
 from core.paths import get_data_path
 
-REPOSITORY = "mecarizz/lumapublic"
+REPOSITORY = "mecarizz/luma"
 RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASE_ASSET = "Luma-windows-x64.zip"
 CHECKSUM_ASSET = f"{RELEASE_ASSET}.sha256"

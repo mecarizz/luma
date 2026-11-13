@@ -10,6 +10,13 @@ from core import updates
 
 
 class TestUpdates(unittest.TestCase):
+    def test_updates_target_the_published_repository(self):
+        self.assertEqual(updates.REPOSITORY, "mecarizz/luma")
+        self.assertEqual(
+            updates.RELEASE_API,
+            "https://api.github.com/repos/mecarizz/luma/releases/latest",
+        )
+
     def test_version_comparison(self):
         self.assertEqual(updates._version_tuple("v1.2.3"), (1, 2, 3))
         with self.assertRaises(ValueError):
@@ -23,11 +30,11 @@ class TestUpdates(unittest.TestCase):
             "assets": [
                 {
                     "name": updates.RELEASE_ASSET,
-                    "browser_download_url": "https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip",
+                    "browser_download_url": "https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip",
                 },
                 {
                     "name": updates.CHECKSUM_ASSET,
-                    "browser_download_url": "https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
+                    "browser_download_url": "https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
                 },
             ],
         }
@@ -61,8 +68,8 @@ class TestUpdates(unittest.TestCase):
             title="Luma 1.1.0",
             notes="",
             page_url="",
-            asset_url="https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip",
-            checksum_url="https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
+            asset_url="https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip",
+            checksum_url="https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
         )
 
         with tempfile.TemporaryDirectory() as directory:
@@ -86,8 +93,8 @@ class TestUpdates(unittest.TestCase):
             title="Luma 1.1.0",
             notes="",
             page_url="",
-            asset_url="https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip",
-            checksum_url="https://github.com/mecarizz/lumapublic/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
+            asset_url="https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip",
+            checksum_url="https://github.com/mecarizz/luma/releases/download/v1.1.0/Luma-windows-x64.zip.sha256",
         )
 
         with tempfile.TemporaryDirectory() as directory:

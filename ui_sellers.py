@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
+    QLabel,
     QListWidget,
     QMessageBox,
     QPushButton,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from core.seller_models import CARGO_PROVIDERS, SellerProfile
 from core.seller_manager import SellerManager
+from core.i18n import ask_yes_no, tr
 
 class SellersTab(QWidget):
     seller_configuration_changed = Signal()
@@ -21,6 +23,7 @@ class SellersTab(QWidget):
     def __init__(self, seller_manager=None):
         super().__init__()
         self.seller_manager = seller_manager
+        self.language = "en"
         self._selected_seller_id = None
         self._seller_status = {}
         layout = QHBoxLayout(self)
@@ -59,11 +62,17 @@ class SellersTab(QWidget):
         self.check_auto_print = QCheckBox("Print labels automatically")
         self.check_auto_print.setChecked(True)
 
-        form_layout.addRow("Seller ID:", self.input_seller_id)
-        form_layout.addRow("Seller Name:", self.input_seller_name)
-        form_layout.addRow("API Key:", self.input_api_key)
-        form_layout.addRow("API Secret:", self.input_api_secret)
-        form_layout.addRow("Default Cargo:", self.combo_cargo)
+        self._form_labels = {}
+        for key, widget in (
+            ("Seller ID:", self.input_seller_id),
+            ("Seller Name:", self.input_seller_name),
+            ("API Key:", self.input_api_key),
+            ("API Secret:", self.input_api_secret),
+            ("Default Cargo:", self.combo_cargo),
+        ):
+            label = QLabel(key)
+            self._form_labels[key] = label
+            form_layout.addRow(label, widget)
         form_layout.addRow("", self.check_auto_switch)
         form_layout.addRow("", self.check_monitoring)
         form_layout.addRow("", self.check_auto_print)
@@ -83,6 +92,38 @@ class SellersTab(QWidget):
 
         if self.seller_manager is not None:
             self.refresh_sellers()
+        self.set_language("en")
+
+    def set_language(self, language: str) -> None:
+        self.language = language
+        self.btn_add_seller.setText(tr("Add New Seller", language))
+        self.btn_remove_seller.setText(tr("Remove Selected", language))
+        self.input_seller_id.setPlaceholderText(tr("Digits only", language))
+        self.input_api_key.setPlaceholderText(
+            tr("Required for a new seller; blank keeps the saved key", language)
+        )
+        self.input_api_secret.setPlaceholderText(
+            tr("Required for a new seller; blank keeps the saved secret", language)
+        )
+        self.check_auto_switch.setText(tr("Enable Auto-Switch Cargo on Failure", language))
+        self.check_monitoring.setText(tr("Enable order monitoring", language))
+        self.check_auto_print.setText(tr("Print labels automatically", language))
+        self.btn_save.setText(tr("Save Seller Configuration", language))
+        for key, label in self._form_labels.items():
+            label.setText(tr(key, language))
+        for seller_id, status in self._seller_status.items():
+            for index in range(self.seller_list.count()):
+                item = self.seller_list.item(index)
+                if item.data(Qt.UserRole) == seller_id:
+                    item.setToolTip(tr(status, language))
+                    break
+
+        selected_cargo = self.combo_cargo.currentData()
+        self.combo_cargo.clear()
+        for code, label in CARGO_PROVIDERS.items():
+            self.combo_cargo.addItem(tr(label, language), code)
+        index = self.combo_cargo.findData(selected_cargo)
+        self.combo_cargo.setCurrentIndex(max(0, index))
 
     def set_manager(self, seller_manager: SellerManager) -> None:
         self.seller_manager = seller_manager
@@ -147,8 +188,8 @@ class SellersTab(QWidget):
         if old_profile is None and self.seller_manager.get(seller_id) is not None:
             QMessageBox.warning(
                 self,
-                "Seller configuration",
-                "A seller with this ID already exists. Select it to edit the saved profile.",
+                tr("Seller configuration", self.language),
+                tr("A seller with this ID already exists. Select it to edit the saved profile.", self.language),
             )
             return
         profile = SellerProfile(
@@ -164,15 +205,27 @@ class SellersTab(QWidget):
         try:
             errors = self.seller_manager.save_profile(profile)
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(self, "Seller configuration", f"Could not save seller:\n{exc}")
+            QMessageBox.critical(
+                self,
+                tr("Seller configuration", self.language),
+                tr("Could not save seller:\n{error}", self.language).format(error=exc),
+            )
             return
         if errors:
-            QMessageBox.warning(self, "Seller configuration", "\n".join(errors))
+            QMessageBox.warning(
+                self,
+                tr("Seller configuration", self.language),
+                "\n".join(tr(error, self.language) for error in errors),
+            )
             return
 
         self.refresh_sellers(seller_id)
         self.seller_configuration_changed.emit()
-        QMessageBox.information(self, "Seller configuration", "Seller configuration saved.")
+        QMessageBox.information(
+            self,
+            tr("Seller configuration", self.language),
+            tr("Seller configuration saved.", self.language),
+        )
 
     def set_seller_status(self, seller_id: str, status: str) -> None:
         self._seller_status[seller_id] = status
@@ -185,23 +238,30 @@ class SellersTab(QWidget):
     def _delete_seller(self) -> None:
         seller_id = self._selected_seller_id
         if not seller_id:
-            QMessageBox.information(self, "Remove seller", "Select a seller to remove.")
+            QMessageBox.information(
+                self,
+                tr("Remove seller", self.language),
+                tr("Select a seller to remove.", self.language),
+            )
             return
 
-        answer = QMessageBox.question(
+        if not ask_yes_no(
             self,
             "Remove seller",
-            f"Remove seller {seller_id}?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if answer != QMessageBox.Yes:
+            "Remove seller {seller_id}?",
+            self.language,
+            seller_id=seller_id,
+        ):
             return
 
         try:
             self.seller_manager.delete_profile(seller_id)
         except OSError as exc:
-            QMessageBox.critical(self, "Remove seller", f"Could not remove seller:\n{exc}")
+            QMessageBox.critical(
+                self,
+                tr("Remove seller", self.language),
+                tr("Could not remove seller:\n{error}", self.language).format(error=exc),
+            )
             return
         self._seller_status.pop(seller_id, None)
         self.refresh_sellers()
