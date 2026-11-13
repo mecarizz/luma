@@ -1,3 +1,3 @@
 """Application version used for release update checks."""
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"

@@ -18,6 +18,7 @@ from ui_dashboard import DashboardTab
 from ui_sellers import SellersTab
 from ui_catalog import CatalogTab
 from ui_logs import LogsTab
+from ui_orders import OrdersTab
 from app_controller import AppController
 
 
@@ -61,10 +62,12 @@ class LumaMainWindow(QMainWindow):
         
         self.tab_dashboard = DashboardTab()
         self.tab_sellers = SellersTab()
+        self.tab_orders = OrdersTab()
         self.tab_catalog = CatalogTab()
         self.tab_logs = LogsTab()
 
         self.tabs.addTab(self.tab_dashboard, "Dashboard")
+        self.tabs.addTab(self.tab_orders, "Orders & Labels")
         self.tabs.addTab(self.tab_sellers, "Seller Config")
         self.tabs.addTab(self.tab_catalog, "Product Catalog")
         self.tabs.addTab(self.tab_logs, "System Logs")
@@ -162,6 +165,14 @@ class LumaMainWindow(QMainWindow):
         QMessageBox.warning(self, "Update check failed", message)
 
     def closeEvent(self, event):
+        if not self.tab_orders.stop_worker():
+            QMessageBox.information(
+                self,
+                "Operation in progress",
+                "The order operation is still running. Please wait for it to finish before closing Luma.",
+            )
+            event.ignore()
+            return
         if self.controller is not None:
             self.controller.stop_all_workers()
         event.accept()

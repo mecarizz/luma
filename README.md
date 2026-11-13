@@ -26,6 +26,12 @@ standalone watcher check, use:
 python trendyol_watcher.py --dry-run --once
 ```
 
+For manual handling, open **Orders & Labels**, fetch packages for a seller (or
+all sellers), select the packages, and choose **Print as TEX**, **Print as DHL**,
+or a carrier from the custom selection. Luma switches the selected packages in
+Trendyol and refreshes them before printing so the labels use the new carrier's
+tracking barcodes. The automatic watcher pauses during these manual operations.
+
 ## Build a Windows release
 
 Install the build dependencies and run the build script:
