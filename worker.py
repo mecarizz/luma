@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from typing import Iterable, List
 
 from PySide6.QtCore import QThread, Signal
 
+from core.logger import setup_logger
 from core.paths import get_data_path
 from core.seller_models import SellerProfile
 
@@ -87,11 +89,6 @@ class SellerWorker(QThread):
         )
 
     def run(self):
-        import trendyol_labels as labels
-        import trendyol_watcher as watcher
-
-        from core.logger import setup_logger
-
         setup_logger()
         logger = logging.getLogger("trendyol_manager")
         log_handler = _QtLogHandler(self.log_emitted)
@@ -99,24 +96,46 @@ class SellerWorker(QThread):
         logger.addHandler(log_handler)
 
         try:
+            import trendyol_labels as labels
+            import trendyol_watcher as watcher
+
             self.log_emitted.emit("Order watcher started; seller profiles will be polled automatically.")
+            logger.info(
+                "Runtime diagnostics: frozen=%s data_dir=%s configured_profiles=%d",
+                bool(getattr(sys, "frozen", False)),
+                get_data_path(""),
+                len(self._profile_snapshot()),
+            )
             watcher.tl.register_font()
             state = watcher.load_state()
             attempts = {}
             next_poll = {}
             last_configuration_warning = set()
+            no_active_profiles_warning = False
 
             while not self._stop_event.is_set():
                 configured_profiles = [
                     profile for profile in self._profile_snapshot()
                     if profile.is_active and profile.monitoring_enabled
                 ]
+                if not configured_profiles:
+                    if not no_active_profiles_warning:
+                        logger.warning(
+                            "Watcher idle: no seller profiles are both active and monitoring-enabled."
+                        )
+                        no_active_profiles_warning = True
+                    self._stop_event.wait(1)
+                    continue
+                no_active_profiles_warning = False
+
                 profiles = []
                 for profile in configured_profiles:
-                    if not profile.seller_id.isdigit() or not profile.raw_api_key or not profile.raw_api_secret:
+                    credential_error = profile.credential_error
+                    if not profile.seller_id.isdigit() or credential_error:
                         if profile.seller_id not in last_configuration_warning:
+                            reason = credential_error or "Seller ID must contain digits only."
                             self.log_emitted.emit(
-                                f"[{profile.display_tag}] Monitoring skipped: seller ID, API key, and API secret are required."
+                                f"[{profile.display_tag}] Monitoring skipped: {reason}"
                             )
                             last_configuration_warning.add(profile.seller_id)
                         self.status_updated.emit(profile.seller_id, "Configuration Error")
@@ -137,6 +156,12 @@ class SellerWorker(QThread):
 
                     self.status_updated.emit(sid, "Active")
                     try:
+                        logger.info(
+                            "[%s] Poll started: statuses=%s lookback_hours=%s",
+                            profile.display_tag,
+                            ",".join(profile.statuses),
+                            profile.lookback_hours,
+                        )
                         baseline = sid not in state.setdefault("sellers_seen", [])
                         watcher.poll_once(
                             self._watcher_options(profile),
@@ -150,9 +175,11 @@ class SellerWorker(QThread):
                             state["sellers_seen"].append(sid)
                             watcher.save_state(state)
                     except SystemExit as exc:
+                        logger.error("[%s] Seller API error: %s", profile.display_tag, exc)
                         self.log_emitted.emit(f"[{profile.display_tag}] Seller API error: {exc}")
                         self.status_updated.emit(sid, "Error")
                     except Exception as exc:
+                        logger.exception("[%s] Poll failed", profile.display_tag)
                         self.log_emitted.emit(
                             f"[{profile.display_tag}] {type(exc).__name__}: {exc}"
                         )
@@ -162,8 +189,10 @@ class SellerWorker(QThread):
 
                 self._stop_event.wait(1)
         except (Exception, SystemExit) as exc:
+            logger.exception("Watcher failed to initialize or stopped unexpectedly")
             self.log_emitted.emit(f"Watcher stopped: {type(exc).__name__}: {exc}")
         finally:
+            logger.info("Order watcher thread stopped.")
             logger.removeHandler(log_handler)
 
     def stop(self) -> None:

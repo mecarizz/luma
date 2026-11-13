@@ -56,8 +56,8 @@ The executable and release ZIP are created under `dist/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.5
-git push origin v1.0.5
+git tag v1.0.6
+git push origin v1.0.6
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
@@ -70,6 +70,12 @@ overwrite the currently running executable. You can launch the new version
 immediately or use its desktop shortcut later. You can also choose
 **Help > Check for Updates** to check manually. Releases are public, so only
 publish data that is intended to be public.
+
+For packaged-app diagnostics, use **System Logs** or inspect
+`%LOCALAPPDATA%\Luma\watcher.log`. Logs include watcher startup, polling,
+Trendyol HTTP status/request IDs, and printing outcomes; API keys, secrets, and
+response bodies are not logged. The packaged app's data and log files belong
+to the Windows account that runs Luma.
 
 ## Project layout
 

@@ -172,7 +172,9 @@ def switch_to_cargo(pkg_id, seller, target_cargo=None):
             if r.status_code in (500, 502, 503, 504) and attempt < 2:
                 time.sleep(2 ** attempt)
                 continue
-            return False, f"HTTP {r.status_code}: {r.text[:300]}"
+            request_id = r.headers.get("x-request-id") or r.headers.get("X-Request-ID")
+            suffix = f" (request ID: {request_id})" if request_id else ""
+            return False, f"HTTP {r.status_code}{suffix}"
         except requests.RequestException as e:
             if attempt < 2:
                 time.sleep(2 ** attempt)
@@ -249,10 +251,16 @@ def poll_once(opts, state, attempts, seller, baseline_only=False, on_processed=N
     target_cargo = get_seller_cargo(seller)
     cargo_label = "TEX" if target_cargo == "TEX" else ("DHL" if target_cargo == "DHLECOMMP" else target_cargo)
     patterns = tl.load_outsourced(opts.outsourced_file)          # re-read each cycle: edits apply instantly
+    log(
+        f"[{tag}] Checking Trendyol orders: statuses={','.join(opts.status)} "
+        f"lookback_hours={opts.lookback_hours}"
+    )
     packages = tl.fetch_packages(opts.status, opts.lookback_hours / 24, seller=seller)
+    log(f"[{tag}] Trendyol returned {len(packages)} package(s) for this poll.")
     seen = state["packages"]
     in_progress = state.setdefault("in_progress", {})
     new = [p for p in packages if pid_of(p) not in seen]
+    log(f"[{tag}] {len(new)} package(s) are new to the local processed-order state.")
 
     if baseline_only:
         for p in new:

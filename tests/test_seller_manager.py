@@ -47,6 +47,16 @@ class TestSellerManager(unittest.TestCase):
             self.assertIn("Trendyol API Key is required.", errors)
             self.assertIn("Trendyol API Secret is required.", errors)
 
+    def test_failed_dpapi_decryption_is_reported_as_unavailable_credentials(self):
+        profile = SellerProfile(
+            seller_id="123456",
+            api_key="dpapi:encrypted-key",
+            api_secret="dpapi:encrypted-secret",
+        )
+
+        with patch("core.seller_models.decrypt_secret", side_effect=lambda value: value):
+            self.assertIn("could not be decrypted", profile.credential_error)
+
 
 if __name__ == "__main__":
     unittest.main()

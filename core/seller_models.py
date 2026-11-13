@@ -86,6 +86,21 @@ class SellerProfile:
     def raw_api_secret(self) -> str:
         return decrypt_secret(self.api_secret)
 
+    @property
+    def credential_error(self) -> Optional[str]:
+        for label, stored, raw in (
+            ("API key", self.api_key, self.raw_api_key),
+            ("API secret", self.api_secret, self.raw_api_secret),
+        ):
+            if not raw:
+                return f"{label} is missing."
+            if stored.startswith("dpapi:") and raw.startswith("dpapi:"):
+                return (
+                    f"{label} could not be decrypted for the current Windows user. "
+                    "Re-enter it in Seller Config while signed in as the account that runs Luma."
+                )
+        return None
+
     def to_dict(self, encrypt_credentials: bool = True) -> Dict[str, Any]:
         data = asdict(self)
         if encrypt_credentials:

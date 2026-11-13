@@ -326,17 +326,53 @@ def orders_url(sid):
 
 def _get(url, headers, params, retries=5):
     import requests
+    from core.logger import log
+
     for attempt in range(retries):
-        r = requests.get(url, headers=headers, params=params, timeout=30)
-        if VERBOSE:
-            print(f"  GET {r.url}\n  -> HTTP {r.status_code}, {len(r.content)} bytes")
+        status = params.get("status", "unknown")
+        page = params.get("page", 0)
+        log(f"Trendyol orders request started: status={status} page={page} attempt={attempt + 1}")
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=30)
+        except requests.RequestException as exc:
+            log(f"Trendyol orders network failure: {type(exc).__name__}")
+            raise RuntimeError(
+                f"Trendyol orders network request failed ({type(exc).__name__})."
+            ) from exc
+
+        log(
+            f"Trendyol orders response: status={r.status_code} "
+            f"response_bytes={len(r.content)} request_id="
+            f"{r.headers.get('x-request-id') or r.headers.get('X-Request-ID') or 'unavailable'}"
+        )
         if r.status_code == 429:               # rate limited -> back off
+            log(f"Trendyol rate limit reached; retrying after {2 ** attempt}s.")
             time.sleep(2 ** attempt)
             continue
         if r.status_code in (401, 403):
-            sys.exit(f"{r.status_code} from Trendyol: check API key/secret and the User-Agent. {r.text[:200]}")
-        r.raise_for_status()
-        return r.json()
+            message = (
+                f"Trendyol API authentication/permission error (HTTP {r.status_code}). "
+                "Check the seller credentials, API access, and seller ID in Seller Config."
+            )
+            log(message)
+            sys.exit(message)
+        try:
+            r.raise_for_status()
+            data = r.json()
+        except requests.HTTPError as exc:
+            raise RuntimeError(
+                f"Trendyol orders request failed with HTTP {r.status_code}."
+            ) from exc
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Trendyol returned invalid JSON for the orders request (HTTP {r.status_code})."
+            ) from exc
+        log(
+            f"Trendyol orders page parsed: status={status} page={page} "
+            f"returned={len(data.get('content', []))} total_elements={data.get('totalElements', 'unknown')}"
+        )
+        return data
+    log("Trendyol rate limit retries exhausted.")
     sys.exit("Still rate limited (429) after retries.")
 
 
@@ -377,9 +413,6 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None):
                 if order_number:
                     params["orderNumber"] = order_number
                 data = _get(url, headers, params)
-                if VERBOSE:
-                    print(f"  [{status}] page {page}: totalElements={data.get('totalElements')}, "
-                          f"returned={len(data.get('content', []))}")
                 for p in data.get("content", []):
                     pid = p.get("shipmentPackageId")
                     if pid not in seen:
@@ -389,6 +422,12 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None):
                 if page + 1 >= data.get("totalPages", 1):
                     break
                 page += 1
+    from core.logger import log
+
+    log(
+        f"Trendyol order fetch complete: seller={seller_tag(seller)} "
+        f"statuses={','.join(statuses)} packages={len(packages)}"
+    )
     return packages
 
 

@@ -20,8 +20,10 @@ class TestFetchOrdersWorker(unittest.TestCase):
     def test_fetch_uses_saved_profile_credentials_statuses_and_lookback(self):
         package = {"shipmentPackageId": 10}
         results = []
+        logs = []
         worker = _FetchOrdersWorker([self.profile])
         worker.completed.connect(results.append)
+        worker.log_emitted.connect(logs.append)
 
         with patch("trendyol_labels.fetch_packages", return_value=[package]) as fetch:
             worker.run()
@@ -38,6 +40,8 @@ class TestFetchOrdersWorker(unittest.TestCase):
             },
         )
         self.assertEqual(results, [([package], [])])
+        self.assertTrue(any("Manual order fetch started" in line for line in logs))
+        self.assertTrue(any("Manual order fetch completed" in line for line in logs))
 
     def test_fetch_reports_trendyol_errors_to_the_ui(self):
         results = []
@@ -49,6 +53,20 @@ class TestFetchOrdersWorker(unittest.TestCase):
 
         self.assertEqual(results[0][0], [])
         self.assertIn("403: invalid API access", results[0][1][0])
+
+    def test_fetch_does_not_send_dpapi_ciphertext_as_api_credentials(self):
+        self.profile.api_key = "dpapi:encrypted-key"
+        self.profile.api_secret = "dpapi:encrypted-secret"
+        results = []
+        worker = _FetchOrdersWorker([self.profile])
+        worker.completed.connect(results.append)
+
+        with patch("core.seller_models.decrypt_secret", side_effect=lambda value: value):
+            with patch("trendyol_labels.fetch_packages") as fetch:
+                worker.run()
+
+        fetch.assert_not_called()
+        self.assertIn("could not be decrypted", results[0][1][0])
 
 
 if __name__ == "__main__":

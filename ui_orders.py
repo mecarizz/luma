@@ -1,6 +1,7 @@
 """Manual order lookup and carrier-specific label printing."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from core.manual_orders import prepare_package_for_cargo
 from core.i18n import ask_yes_no, tr
+from core.logger import CallbackLogHandler, get_logger
 from core.seller_models import CARGO_PROVIDERS, SellerProfile
 from worker import SellerWorker
 
@@ -35,34 +37,63 @@ def _api_seller(profile: SellerProfile) -> Dict[str, str]:
 
 class _FetchOrdersWorker(QThread):
     completed = Signal(object)
+    log_emitted = Signal(str)
 
     def __init__(self, profiles: Iterable[SellerProfile]):
         super().__init__()
         self.profiles = list(profiles)
 
     def run(self) -> None:
-        import trendyol_labels as labels
-
         packages: List[Dict[str, Any]] = []
         errors: List[str] = []
-        for profile in self.profiles:
-            if not profile.raw_api_key or not profile.raw_api_secret:
-                errors.append(f"{profile.display_tag}: API credentials are missing.")
-                continue
-            try:
-                found = labels.fetch_packages(
-                    profile.statuses,
-                    profile.lookback_hours / 24,
-                    seller=_api_seller(profile),
-                )
-                packages.extend(found)
-            except (Exception, SystemExit) as exc:
-                errors.append(f"{profile.display_tag}: {type(exc).__name__}: {exc}")
-        self.completed.emit((packages, errors))
+        logger = get_logger()
+        log_handler = CallbackLogHandler(self.log_emitted.emit)
+        log_handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(log_handler)
+        try:
+            import trendyol_labels as labels
+
+            for profile in self.profiles:
+                credential_error = profile.credential_error
+                if credential_error:
+                    error = f"{profile.display_tag}: {credential_error}"
+                    errors.append(error)
+                    logger.error("Manual order fetch blocked: %s", error)
+                    continue
+                try:
+                    logger.info(
+                        "[%s] Manual order fetch started: statuses=%s lookback_hours=%s",
+                        profile.display_tag,
+                        ",".join(profile.statuses),
+                        profile.lookback_hours,
+                    )
+                    found = labels.fetch_packages(
+                        profile.statuses,
+                        profile.lookback_hours / 24,
+                        seller=_api_seller(profile),
+                    )
+                    packages.extend(found)
+                    logger.info(
+                        "[%s] Manual order fetch completed: packages=%d",
+                        profile.display_tag,
+                        len(found),
+                    )
+                except (Exception, SystemExit) as exc:
+                    error = f"{profile.display_tag}: {type(exc).__name__}: {exc}"
+                    errors.append(error)
+                    logger.error("[%s] Manual order fetch failed: %s", profile.display_tag, exc)
+        except (Exception, SystemExit) as exc:
+            error = f"Order fetch could not start: {type(exc).__name__}: {exc}"
+            errors.append(error)
+            logger.error("Manual order fetch worker failed to initialize: %s", exc)
+        finally:
+            logger.removeHandler(log_handler)
+            self.completed.emit((packages, errors))
 
 
 class _PrintOrdersWorker(QThread):
     completed = Signal(object)
+    log_emitted = Signal(str)
 
     def __init__(
         self,
@@ -76,56 +107,75 @@ class _PrintOrdersWorker(QThread):
         self.target_cargo = target_cargo
 
     def run(self) -> None:
-        import trendyol_labels as labels
-        import trendyol_watcher as watcher
-
-        prepared: Dict[str, List[Dict[str, Any]]] = {}
-        errors: List[str] = []
-        for package in self.packages:
-            seller_id = str((package.get("_seller") or {}).get("id") or "")
-            profile = self.profiles.get(seller_id)
-            if profile is None:
-                errors.append(f"Order {package.get('orderNumber', '?')}: seller profile is unavailable.")
-                continue
-
-            try:
-                seller = _api_seller(profile)
-                options = SellerWorker._watcher_options(profile)
-                refreshed = prepare_package_for_cargo(
-                    package,
-                    seller,
-                    options,
-                    self.target_cargo,
-                )
-                prepared.setdefault(seller_id, []).append(refreshed)
-            except (Exception, SystemExit) as exc:
-                errors.append(f"Order {package.get('orderNumber', '?')}: {exc}")
-
+        logger = get_logger()
         printed_count = 0
-        for seller_id, seller_packages in prepared.items():
-            profile = self.profiles[seller_id]
-            try:
-                labels.register_font()
-                pdf_path = watcher.make_label_pdf(
-                    seller_packages,
-                    SellerWorker._watcher_options(profile),
-                )
-                if watcher.send_to_printer(pdf_path, profile.printer_name):
-                    printed_count += len(seller_packages)
-                else:
-                    errors.append(
-                        f"{profile.display_tag}: could not send {len(seller_packages)} label(s) "
-                        f"to printer {profile.printer_name!r}. PDF: {pdf_path}"
-                    )
-            except (Exception, SystemExit) as exc:
-                errors.append(f"{profile.display_tag}: label generation/printing failed: {exc}")
+        errors: List[str] = []
+        log_handler = CallbackLogHandler(self.log_emitted.emit)
+        log_handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(log_handler)
+        try:
+            import trendyol_labels as labels
+            import trendyol_watcher as watcher
 
-        self.completed.emit((printed_count, errors))
+            prepared: Dict[str, List[Dict[str, Any]]] = {}
+            for package in self.packages:
+                seller_id = str((package.get("_seller") or {}).get("id") or "")
+                profile = self.profiles.get(seller_id)
+                if profile is None:
+                    errors.append(
+                        f"Order {package.get('orderNumber', '?')}: seller profile is unavailable."
+                    )
+                    continue
+
+                try:
+                    seller = _api_seller(profile)
+                    options = SellerWorker._watcher_options(profile)
+                    refreshed = prepare_package_for_cargo(
+                        package,
+                        seller,
+                        options,
+                        self.target_cargo,
+                    )
+                    prepared.setdefault(seller_id, []).append(refreshed)
+                except (Exception, SystemExit) as exc:
+                    errors.append(f"Order {package.get('orderNumber', '?')}: {exc}")
+
+            for seller_id, seller_packages in prepared.items():
+                profile = self.profiles[seller_id]
+                try:
+                    labels.register_font()
+                    pdf_path = watcher.make_label_pdf(
+                        seller_packages,
+                        SellerWorker._watcher_options(profile),
+                    )
+                    if watcher.send_to_printer(pdf_path, profile.printer_name):
+                        printed_count += len(seller_packages)
+                    else:
+                        errors.append(
+                            f"{profile.display_tag}: could not send {len(seller_packages)} label(s) "
+                            f"to printer {profile.printer_name!r}. PDF: {pdf_path}"
+                        )
+                except (Exception, SystemExit) as exc:
+                    errors.append(
+                        f"{profile.display_tag}: label generation/printing failed: {exc}"
+                    )
+        except (Exception, SystemExit) as exc:
+            errors.append(f"Label printing could not start: {type(exc).__name__}: {exc}")
+            logger.error("Manual label printing worker failed to initialize: %s", exc)
+        finally:
+            logger.info(
+                "Manual label printing completed: printed=%d errors=%d",
+                printed_count,
+                len(errors),
+            )
+            logger.removeHandler(log_handler)
+            self.completed.emit((printed_count, errors))
 
 
 class OrdersTab(QWidget):
     operation_started = Signal()
     operation_finished = Signal()
+    log_emitted = Signal(str)
 
     def __init__(self, seller_manager=None):
         super().__init__()
@@ -291,6 +341,7 @@ class OrdersTab(QWidget):
         self._set_status("Fetching packages using each seller's configured statuses and lookback...")
         worker = _FetchOrdersWorker(profiles)
         worker.completed.connect(self._on_orders_fetched)
+        worker.log_emitted.connect(self.log_emitted)
         self._start_worker(worker)
 
     def _on_orders_fetched(self, result: Tuple[List[Dict[str, Any]], List[str]]) -> None:
@@ -371,6 +422,7 @@ class OrdersTab(QWidget):
         )
         worker = _PrintOrdersWorker(packages, self._profiles, target_cargo)
         worker.completed.connect(self._on_labels_printed)
+        worker.log_emitted.connect(self.log_emitted)
         self._start_worker(worker)
 
     def _on_labels_printed(self, result: Tuple[int, List[str]]) -> None:

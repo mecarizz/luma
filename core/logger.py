@@ -10,12 +10,23 @@ from logging.handlers import RotatingFileHandler
 import os
 import sys
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from core.paths import get_data_path
 
 LOGGER_NAME = "trendyol_manager"
 _logger: Optional[logging.Logger] = None
+
+
+class CallbackLogHandler(logging.Handler):
+    """Forward formatted log records to a UI-safe callback."""
+
+    def __init__(self, callback: Callable[[str], None]):
+        super().__init__()
+        self.callback = callback
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.callback(self.format(record))
 
 
 def setup_logger(

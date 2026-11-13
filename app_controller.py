@@ -1,18 +1,38 @@
 """Connect seller profile persistence, the UI, and the Trendyol watcher."""
+from core.logger import setup_logger
 from core.seller_manager import SellerManager
-from core.paths import initialize_runtime_data
+from core.paths import get_data_dir, initialize_runtime_data, is_frozen
 from worker import SellerWorker
 
 
 class AppController:
     def __init__(self, main_window):
         self.ui = main_window
-        initialize_runtime_data()
-        self.seller_manager = SellerManager()
+        logger = setup_logger()
+        logger.info(
+            "Luma startup: frozen=%s data_dir=%s",
+            is_frozen(),
+            get_data_dir(),
+        )
+        try:
+            initialize_runtime_data()
+            self.seller_manager = SellerManager()
+        except Exception:
+            logger.exception("Luma could not initialize runtime data or load seller profiles")
+            raise
         self.worker = None
+        logger.info(
+            "Seller profiles loaded: total=%d active_monitoring=%d",
+            len(self.seller_manager.list_all()),
+            sum(
+                profile.is_active and profile.monitoring_enabled
+                for profile in self.seller_manager.list_all()
+            ),
+        )
 
         self.ui.tab_sellers.set_manager(self.seller_manager)
         self.ui.tab_orders.set_manager(self.seller_manager)
+        self.ui.tab_orders.log_emitted.connect(self.ui.tab_logs.append_log)
         self.ui.tab_orders.operation_started.connect(self.pause_watcher)
         self.ui.tab_orders.operation_finished.connect(self.resume_watcher)
         self.ui.tab_sellers.seller_configuration_changed.connect(self.refresh_workers)
