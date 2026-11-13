@@ -188,11 +188,11 @@ def switch_to_dhl(pkg_id, seller):
     return switch_to_cargo(pkg_id, seller, "DHLECOMMP")
 
 
-def refetch_as_cargo(pkg, opts, seller=None, tries=6):
+def refetch_as_cargo(pkg, opts, seller=None, target_cargo=None, tries=6):
     """After a switch, wait until the package reports target carrier, return the fresh package (new tracking no.)."""
     pid = pid_of(pkg)
     sl = seller or seller_of(pkg)
-    target_cargo = get_seller_cargo(sl)
+    target = target_cargo or get_seller_cargo(sl)
     for _ in range(tries):
         time.sleep(3)
         found = tl.fetch_packages(opts.status, 3, order_number=pkg.get("orderNumber"), seller=sl)
@@ -201,14 +201,14 @@ def refetch_as_cargo(pkg, opts, seller=None, tries=6):
             # STRICT ID MATCH: Never fall back to other packages of the same order
             continue
         for p in matching:
-            if is_target_cargo(p, target_cargo):
+            if is_target_cargo(p, target):
                 return p
     return None
 
 
 def refetch_as_dhl(pkg, opts, tries=6):
     """Backward-compatible wrapper."""
-    return refetch_as_cargo(pkg, opts, tries=tries)
+    return refetch_as_cargo(pkg, opts, target_cargo="DHLECOMMP", tries=tries)
 
 
 # --------------------------------------------------------------------------- #

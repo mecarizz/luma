@@ -32,6 +32,8 @@ class AppController:
 
         self.ui.tab_sellers.set_manager(self.seller_manager)
         self.ui.tab_orders.set_manager(self.seller_manager)
+        if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "set_seller_manager"):
+            self.ui.tab_dashboard.set_seller_manager(self.seller_manager)
         self.ui.tab_orders.log_emitted.connect(self.ui.tab_logs.append_log)
         self.ui.tab_orders.operation_started.connect(self.pause_watcher)
         self.ui.tab_orders.operation_finished.connect(self.resume_watcher)
@@ -50,12 +52,18 @@ class AppController:
         self.worker.status_updated.connect(self._update_seller_status)
         self.worker.start()
         self._update_active_seller_count()
+        self.ui.set_monitoring_state(True)
+        if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "set_automation_active"):
+            self.ui.tab_dashboard.set_automation_active(True)
 
     def pause_watcher(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait()
         self.worker = None
+        self.ui.set_monitoring_state(False)
+        if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "set_automation_active"):
+            self.ui.tab_dashboard.set_automation_active(False)
 
     def resume_watcher(self):
         self.start_watcher()
@@ -65,13 +73,18 @@ class AppController:
             self.worker.set_profiles(self.seller_manager.list_all())
         self.ui.tab_orders.refresh_sellers()
         self._update_active_seller_count()
+        if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "refresh_metrics"):
+            self.ui.tab_dashboard.refresh_metrics()
+        if hasattr(self.ui, "tab_reports") and hasattr(self.ui.tab_reports, "refresh_report"):
+            self.ui.tab_reports.refresh_report()
 
     def _update_active_seller_count(self):
         active = sum(
             profile.is_active and profile.monitoring_enabled
             for profile in self.seller_manager.list_all()
         )
-        self.ui.tab_dashboard.card_active_sellers.lbl_value.setText(str(active))
+        if hasattr(self.ui.tab_dashboard, "card_active_sellers"):
+            self.ui.tab_dashboard.card_active_sellers.lbl_value.setText(str(active))
 
     def _update_seller_status(self, seller_id, status):
         self.ui.tab_sellers.set_seller_status(seller_id, status)

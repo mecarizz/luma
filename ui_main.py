@@ -1,25 +1,29 @@
+"""Main application window, persistent navigation, and coordinator for Luma."""
+from __future__ import annotations
+
 import sys
 from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QThread, QTimer, Signal, Qt
-from PySide6.QtGui import QActionGroup
+from PySide6.QtGui import QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
-    QHBoxLayout,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QSizePolicy,
 )
 
-from core.paths import is_frozen
+from app_controller import AppController
 from core.i18n import ask_yes_no, tr
+from core.paths import is_frozen
 from core.updates import (
     UpdateRelease,
     download_update,
@@ -28,12 +32,14 @@ from core.updates import (
     launch_update,
 )
 from core.version import VERSION
-from ui_dashboard import DashboardTab
-from ui_sellers import SellersTab
 from ui_catalog import CatalogTab
+from ui_components import StatusBadge
+from ui_dashboard import DashboardTab
 from ui_logs import LogsTab
 from ui_orders import OrdersTab
-from app_controller import AppController
+from ui_reports import ReportsTab
+from ui_sellers import SellersTab
+from ui_settings import SettingsTab
 from ui_theme import DARK_STYLESHEET
 
 
@@ -73,7 +79,7 @@ class LumaMainWindow(QMainWindow):
         saved_language = self.settings.value("language", "en")
         self.language = saved_language if saved_language in ("en", "tr") else "en"
         self.resize(1440, 900)
-        self.setMinimumSize(1050, 700)
+        self.setMinimumSize(1080, 720)
         self.setStyleSheet(DARK_STYLESHEET)
 
         root = QWidget()
@@ -83,13 +89,15 @@ class LumaMainWindow(QMainWindow):
         shell.setContentsMargins(0, 0, 0, 0)
         shell.setSpacing(0)
 
+        # ---------------- Left Navigation Sidebar ----------------
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(224)
+        self.sidebar.setFixedWidth(240)
         side = QVBoxLayout(self.sidebar)
-        side.setContentsMargins(16, 24, 16, 18)
-        side.setSpacing(8)
+        side.setContentsMargins(16, 22, 16, 18)
+        side.setSpacing(6)
 
+        # Brand mark & app title
         brand_row = QHBoxLayout()
         mark = QLabel("◈")
         mark.setObjectName("brandMark")
@@ -99,27 +107,35 @@ class LumaMainWindow(QMainWindow):
         brand_row.addWidget(brand)
         brand_row.addStretch()
         side.addLayout(brand_row)
-        self.tagline = QLabel()
-        self.tagline.setObjectName("muted")
-        self.tagline.setStyleSheet("font-size: 7pt; letter-spacing: 1px;")
-        side.addWidget(self.tagline)
-        side.addSpacing(28)
 
+        self.tagline = QLabel("COMMERCIAL OPERATIONS SUITE")
+        self.tagline.setObjectName("tagline")
+        side.addWidget(self.tagline)
+        side.addSpacing(20)
+
+        # Navigation tabs
         self.tabs = QTabWidget()
         self.tabs.tabBar().hide()
         self.tabs.setDocumentMode(True)
+
         self.tab_dashboard = DashboardTab()
-        self.tab_sellers = SellersTab()
         self.tab_orders = OrdersTab()
+        self.tab_sellers = SellersTab()
         self.tab_catalog = CatalogTab()
+        self.tab_reports = ReportsTab()
         self.tab_logs = LogsTab()
+        self.tab_settings = SettingsTab()
+
         self._pages = [
-            ("⌂", "Dashboard", self.tab_dashboard),
+            ("⌂", "Overview", self.tab_dashboard),
             ("▣", "Orders & Labels", self.tab_orders),
             ("♙", "Seller Config", self.tab_sellers),
             ("▦", "Product Catalog", self.tab_catalog),
+            ("📈", "Reports", self.tab_reports),
             ("▤", "System Logs", self.tab_logs),
+            ("⚙", "Settings", self.tab_settings),
         ]
+
         self.nav_buttons = []
         for icon, title, page in self._pages:
             self.tabs.addTab(page, title)
@@ -130,44 +146,67 @@ class LumaMainWindow(QMainWindow):
             button.clicked.connect(partial(self.navigate, len(self.nav_buttons)))
             side.addWidget(button)
             self.nav_buttons.append(button)
+
         side.addStretch()
 
+        # System health status pill in sidebar
         health = QFrame()
-        health.setObjectName("panel")
+        health.setObjectName("systemPill")
         health_layout = QVBoxLayout(health)
-        health_layout.setContentsMargins(12, 12, 12, 12)
-        self.health_title = QLabel()
+        health_layout.setContentsMargins(12, 10, 12, 10)
+        health_layout.setSpacing(4)
+
+        pill_top = QHBoxLayout()
+        self.health_title = QLabel("SYSTEM READY")
         self.health_title.setObjectName("accent")
+        self.status_pill_badge = StatusBadge("ACTIVE", "success")
+        pill_top.addWidget(self.health_title)
+        pill_top.addStretch()
+        pill_top.addWidget(self.status_pill_badge)
+        health_layout.addLayout(pill_top)
+
         self.health_note = QLabel("Luma services")
         self.health_note.setObjectName("muted")
-        health_layout.addWidget(self.health_title)
         health_layout.addWidget(self.health_note)
         side.addWidget(health)
+
         version_label = QLabel(f"Version {VERSION}")
         version_label.setObjectName("muted")
+        version_label.setStyleSheet("padding-top: 4px; font-size: 8.5pt;")
         side.addWidget(version_label)
+
         shell.addWidget(self.sidebar)
 
+        # ---------------- Main Content Area ----------------
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(28, 22, 28, 20)
-        content_layout.setSpacing(16)
+        content_layout.setContentsMargins(28, 20, 28, 20)
+        content_layout.setSpacing(14)
+
+        # Header Bar
         top = QHBoxLayout()
         self.page_heading = QLabel()
         self.page_heading.setObjectName("pageTitle")
         top.addWidget(self.page_heading)
         top.addStretch()
+
+        # Header quick controls
         self.monitoring_label = QLabel()
         self.monitoring_label.setObjectName("accent")
         top.addWidget(self.monitoring_label)
+
         content_layout.addLayout(top)
+
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        content_layout.addWidget(self.tabs)
+        content_layout.addWidget(self.tabs, 1)
         shell.addWidget(content, 1)
 
+        # Workers & Update Management
         self._release_check_worker = None
         self._update_download_worker = None
         self._release_check_silent = False
+
+        # Menu Bar
         self.language_menu = self.menuBar().addMenu("")
         language_group = QActionGroup(self)
         language_group.setExclusive(True)
@@ -181,12 +220,24 @@ class LumaMainWindow(QMainWindow):
                 lambda checked, selected=code: self.set_language(selected) if checked else None
             )
             self.language_actions[code] = action
+
         self.help_menu = self.menuBar().addMenu("")
         self.update_action = self.help_menu.addAction("")
         self.update_action.triggered.connect(self.check_for_updates)
+
+        # Wire dashboard navigation requests
+        self.tab_dashboard.navigate_requested.connect(self.navigate)
+        self.tab_settings.language_changed.connect(self.set_language)
+        self.tab_settings.check_updates_requested.connect(self.check_for_updates)
+
+        # Setup Keyboard Shortcuts
+        self._setup_shortcuts()
+
+        # Initialize Language & Navigation
         self.set_language(self.language)
         self.navigate(0)
 
+        # Application Controller & Worker Startup
         self.controller = None
         try:
             self.controller = AppController(self)
@@ -204,11 +255,59 @@ class LumaMainWindow(QMainWindow):
             self.tab_sellers.setEnabled(False)
 
         # AppController initializes/migrates the per-user data directory. Refresh
-        # afterward so the catalog UI sees products.json copied from legacy installs.
+        # catalog and dashboard afterward so UI sees existing state and products.
         self.tab_catalog.refresh()
-        QTimer.singleShot(1200, self.check_for_updates_on_startup)
+        self.tab_dashboard.refresh_metrics()
+        self.tab_reports.refresh_report()
+
+        if self.settings.value("auto_check_updates", True, type=bool):
+            QTimer.singleShot(1500, self.check_for_updates_on_startup)
+
+    def _setup_shortcuts(self) -> None:
+        """Register global keyboard shortcuts for fast commercial navigation."""
+        for i in range(min(len(self._pages), 7)):
+            QShortcut(QKeySequence(f"Ctrl+{i+1}"), self, partial(self.navigate, i))
+
+        QShortcut(QKeySequence("Ctrl+F"), self, self._on_shortcut_find)
+        QShortcut(QKeySequence("Ctrl+R"), self, self._on_shortcut_refresh)
+        QShortcut(QKeySequence("Ctrl+,"), self, lambda: self.navigate(6))
+        QShortcut(QKeySequence("Esc"), self, self._on_shortcut_escape)
+
+    def _on_shortcut_find(self) -> None:
+        curr = self.tabs.currentIndex()
+        if curr == 1 and hasattr(self.tab_orders, "search_input"):
+            self.tab_orders.search_input.setFocus()
+            self.tab_orders.search_input.selectAll()
+        elif curr == 3 and hasattr(self.tab_catalog, "search"):
+            self.tab_catalog.search.setFocus()
+            self.tab_catalog.search.selectAll()
+        elif curr == 5 and hasattr(self.tab_logs, "search_input"):
+            self.tab_logs.search_input.setFocus()
+            self.tab_logs.search_input.selectAll()
+
+    def _on_shortcut_refresh(self) -> None:
+        curr = self.tabs.currentIndex()
+        if curr == 0:
+            self.tab_dashboard.refresh_metrics()
+        elif curr == 1:
+            self.tab_orders.fetch_orders()
+        elif curr == 3:
+            self.tab_catalog.refresh()
+        elif curr == 4:
+            self.tab_reports.refresh_report()
+
+    def _on_shortcut_escape(self) -> None:
+        curr = self.tabs.currentIndex()
+        if curr == 1 and hasattr(self.tab_orders, "search_input"):
+            self.tab_orders.search_input.clear()
+        elif curr == 3 and hasattr(self.tab_catalog, "search"):
+            self.tab_catalog.search.clear()
+        elif curr == 5 and hasattr(self.tab_logs, "search_input"):
+            self.tab_logs.search_input.clear()
 
     def navigate(self, index: int) -> None:
+        if index < 0 or index >= len(self._pages):
+            return
         self.tabs.setCurrentIndex(index)
         for button_index, button in enumerate(self.nav_buttons):
             button.setChecked(button_index == index)
@@ -219,6 +318,9 @@ class LumaMainWindow(QMainWindow):
         self.health_title.setText(
             tr("SYSTEM READY" if active else "SYSTEM UNAVAILABLE", self.language)
         )
+        self.health_title.setStyleSheet("color: #34d399;" if active else "color: #fbbf24;")
+        self.status_pill_badge.set_variant("success" if active else "warning")
+        self.status_pill_badge.setText(tr("ACTIVE" if active else "OFFLINE", self.language))
         self.monitoring_label.setText(
             tr("Monitoring active" if active else "Monitoring unavailable", self.language)
         )
@@ -337,30 +439,26 @@ class LumaMainWindow(QMainWindow):
         self.language = language
         self.settings.setValue("language", language)
         self.setWindowTitle(tr("Luma Multi-Seller Manager", language))
-        titles = (
-            "Dashboard",
-            "Orders & Labels",
-            "Seller Config",
-            "Product Catalog",
-            "System Logs",
-        )
-        for index, title in enumerate(titles):
-            self.tabs.setTabText(index, tr(title, language))
-            self.nav_buttons[index].setText(
-                f"{self._pages[index][0]}   {tr(title, language)}"
-            )
 
-        self.page_heading.setText(
-            tr(titles[self.tabs.currentIndex()], language)
-        )
+        for index, (icon, title, _page) in enumerate(self._pages):
+            self.tabs.setTabText(index, tr(title, language))
+            self.nav_buttons[index].setText(f"{icon}   {tr(title, language)}")
+
+        curr_title = self._pages[self.tabs.currentIndex()][1]
+        self.page_heading.setText(tr(curr_title, language))
+
         self.tab_dashboard.set_language(language)
         self.tab_orders.set_language(language)
         self.tab_sellers.set_language(language)
         self.tab_catalog.set_language(language)
+        self.tab_reports.set_language(language)
+        self.tab_logs.set_language(language)
+        self.tab_settings.set_language(language)
+
         self.language_menu.setTitle(tr("Language", language))
         self.help_menu.setTitle(tr("Help", language))
         self.update_action.setText(tr("Check for Updates", language))
-        self.tagline.setText(tr("MANAGE  ·  AUTOMATE  ·  GROW", language))
+        self.tagline.setText(tr("COMMERCIAL OPERATIONS SUITE", language))
         self.health_note.setText(tr("Luma services", language))
         self.set_monitoring_state(
             self.controller is not None if hasattr(self, "controller") else False
@@ -369,7 +467,7 @@ class LumaMainWindow(QMainWindow):
             action.setChecked(code == language)
 
     def closeEvent(self, event):
-        if not self.tab_orders.stop_worker():
+        if hasattr(self, "tab_orders") and not self.tab_orders.stop_worker():
             QMessageBox.information(
                 self,
                 tr("Operation in progress", self.language),
@@ -383,6 +481,7 @@ class LumaMainWindow(QMainWindow):
         if self.controller is not None:
             self.controller.stop_all_workers()
         event.accept()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

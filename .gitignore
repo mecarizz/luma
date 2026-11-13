@@ -11,6 +11,8 @@ __pycache__/
 venv/
 /build/
 /dist/
+/project_extras/build/
+/project_extras/dist/
 
 # Local business data, credentials, order state, and generated files
 /data/
@@ -22,7 +24,7 @@ venv/
 /labels_out/
 /outsourced_labels/
 /backups/
-/archive/
+/project_extras/archive/
 /backup_original/
 /103/
 /ui revamp/
@@ -31,4 +33,3 @@ venv/
 *.sqlite
 *.sqlite3
 *.db
-/auto.py

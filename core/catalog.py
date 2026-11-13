@@ -15,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.paths import find_latest_backup, prune_backups
+
 TR_TZ = timezone(timedelta(hours=3))  # Turkey: UTC+3 all year
 
 
@@ -136,6 +138,41 @@ class ProductCatalog:
         self._last_mtime: float = -1.0
         self.load(force=True)
 
+    def _parse_catalog_data(self, data: Any) -> Tuple[Dict[str, ProductItem], Dict[str, List[ProductItem]], List[WildcardRule]]:
+        products: Dict[str, ProductItem] = {}
+        stock_idx: Dict[str, List[ProductItem]] = {}
+        wildcards: List[WildcardRule] = []
+
+        # Format A: {"_version": "1.0", "products": {...}, "wildcards": [...]}
+        if isinstance(data, dict) and "products" in data and isinstance(data["products"], dict):
+            raw_prods = data["products"]
+            for pat_item in data.get("wildcards", []):
+                if isinstance(pat_item, dict) and pat_item.get("pattern"):
+                    wildcards.append(WildcardRule(
+                        pattern=pat_item["pattern"],
+                        display_name=pat_item.get("display_name") or pat_item.get("name") or "",
+                        seller=pat_item.get("seller"),
+                        category=pat_item.get("category"),
+                        size_type=pat_item.get("size_type"),
+                    ))
+        # Format B: Flat dictionary {"LHLPK": {...}, ...}
+        elif isinstance(data, dict):
+            raw_prods = data
+        else:
+            raw_prods = {}
+
+        for raw_key, raw_val in raw_prods.items():
+            if isinstance(raw_val, dict):
+                prod = ProductItem.from_dict(raw_key, raw_val)
+                if prod.barcode:
+                    products[prod.barcode] = prod
+                    if prod.stock_code:
+                        stock_idx.setdefault(prod.stock_code, []).append(prod)
+
+        # Sort wildcards by pattern length descending (longest pattern first)
+        wildcards.sort(key=lambda r: len(r.pattern), reverse=True)
+        return products, stock_idx, wildcards
+
     def load(self, force: bool = False) -> None:
         """Load catalog from disk if file mtime changed or force=True."""
         if not os.path.exists(self.catalog_path) or os.path.getsize(self.catalog_path) == 0:
@@ -153,50 +190,33 @@ class ProductCatalog:
             with open(self.catalog_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            products: Dict[str, ProductItem] = {}
-            stock_idx: Dict[str, List[ProductItem]] = {}
-            wildcards: List[WildcardRule] = []
-
-            # Format A: {"_version": "1.0", "products": {...}, "wildcards": [...]}
-            if isinstance(data, dict) and "products" in data and isinstance(data["products"], dict):
-                raw_prods = data["products"]
-                for pat_item in data.get("wildcards", []):
-                    if isinstance(pat_item, dict) and pat_item.get("pattern"):
-                        wildcards.append(WildcardRule(
-                            pattern=pat_item["pattern"],
-                            display_name=pat_item.get("display_name") or pat_item.get("name") or "",
-                            seller=pat_item.get("seller"),
-                            category=pat_item.get("category"),
-                            size_type=pat_item.get("size_type"),
-                        ))
-            # Format B: Flat dictionary {"LHLPK": {...}, ...}
-            elif isinstance(data, dict):
-                raw_prods = data
-            else:
-                raw_prods = {}
-
-            for raw_key, raw_val in raw_prods.items():
-                if isinstance(raw_val, dict):
-                    prod = ProductItem.from_dict(raw_key, raw_val)
-                    if prod.barcode:
-                        products[prod.barcode] = prod
-                        if prod.stock_code:
-                            stock_idx.setdefault(prod.stock_code, []).append(prod)
-
-            # Sort wildcards by pattern length descending (longest pattern first)
-            wildcards.sort(key=lambda r: len(r.pattern), reverse=True)
-
+            products, stock_idx, wildcards = self._parse_catalog_data(data)
             self._products = products
             self._stock_index = stock_idx
             self._wildcards = wildcards
             self._last_mtime = mtime
 
         except Exception as e:
-            # Avoid crashing if JSON is temporarily invalid during external edits
+            # Safe recovery from latest valid backup if primary file was corrupted
+            parent = os.path.dirname(self.catalog_path)
+            backup_dir = os.path.join(parent or ".", "backups")
+            latest_backup = find_latest_backup(backup_dir, "products_")
+            if latest_backup:
+                try:
+                    with open(latest_backup, "r", encoding="utf-8") as bf:
+                        backup_data = json.load(bf)
+                    products, stock_idx, wildcards = self._parse_catalog_data(backup_data)
+                    self._products = products
+                    self._stock_index = stock_idx
+                    self._wildcards = wildcards
+                    print(f"[ProductCatalog] Recovered catalog from backup '{latest_backup.name}' after load error: {e}")
+                    return
+                except Exception:
+                    pass
             print(f"[ProductCatalog] Warning: Failed to load '{self.catalog_path}': {e}")
 
     def save(self) -> None:
-        """Atomically persist catalog to disk with automated timestamped backup."""
+        """Atomically persist catalog to disk with automated timestamped backup and retention."""
         # Ensure parent directory exists
         parent = os.path.dirname(self.catalog_path)
         if parent:
@@ -206,10 +226,11 @@ class ProductCatalog:
         if os.path.exists(self.catalog_path) and os.path.getsize(self.catalog_path) > 0:
             backup_dir = os.path.join(parent or ".", "backups")
             os.makedirs(backup_dir, exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             backup_path = os.path.join(backup_dir, f"products_{ts}.json")
             try:
                 shutil.copy2(self.catalog_path, backup_path)
+                prune_backups(backup_dir, "products_")
             except OSError:
                 pass
 

@@ -124,6 +124,34 @@ class ReportingEngine:
 
         return stats
 
+    def get_outsourced_orders(self, today_only: bool = False) -> List[Dict[str, Any]]:
+        """Retrieve historical or today's outsourced orders from state."""
+        state = self._load_state()
+        packages = state.get("packages", {})
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        results = []
+
+        for pid, meta in sorted(packages.items(), key=lambda x: str(x[1].get("at") or ""), reverse=True):
+            action = meta.get("action", "")
+            kind = meta.get("kind", "")
+            if action == "outsourced" or kind in ("outsourced", "mixed"):
+                ts = str(meta.get("at") or "")
+                day = ts[:10] if len(ts) >= 10 else ""
+                if today_only and day != today_str:
+                    continue
+                results.append({
+                    "package_id": pid,
+                    "order_number": meta.get("orderNumber") or pid,
+                    "customer": meta.get("customer") or "—",
+                    "seller": meta.get("seller") or "—",
+                    "carrier": meta.get("carrier") or "—",
+                    "kind": kind or "outsourced",
+                    "at": ts,
+                    "pdf": meta.get("pdf") or "",
+                    "lines": meta.get("lines") or [],
+                })
+        return results
+
     def export_history_to_csv(self, out_path: str) -> int:
         """Export sanitized persistent package records to CSV with UTF-8 BOM."""
         state = self._load_state()
@@ -165,3 +193,6 @@ class ReportingEngine:
                 count += 1
 
         return count
+
+    # Alias for backward compatibility
+    export_audit_csv = export_history_to_csv

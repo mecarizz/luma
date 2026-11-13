@@ -8,10 +8,13 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.catalog import normalize_identifier
+from core.paths import prune_backups
 
 
 @dataclass
@@ -96,7 +99,62 @@ class OutsourcedClassifier:
     @property
     def patterns(self) -> List[str]:
         self.load()
-        return self._patterns
+        return list(self._patterns)
+
+    def add_pattern(self, pattern: str) -> bool:
+        """Add a pattern to the outsourced list and persist atomically."""
+        self.load()
+        norm = normalize_identifier(pattern)
+        if not norm or norm in self._patterns:
+            return False
+        self._patterns.append(norm)
+        self.save()
+        return True
+
+    def remove_pattern(self, pattern: str) -> bool:
+        """Remove a pattern from the outsourced list and persist atomically."""
+        self.load()
+        norm = normalize_identifier(pattern)
+        if norm in self._patterns:
+            self._patterns.remove(norm)
+            self.save()
+            return True
+        return False
+
+    def save(self) -> None:
+        """Atomically persist patterns to outsourced_products.txt with automated backup."""
+        parent = os.path.dirname(self.file_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        if os.path.exists(self.file_path) and os.path.getsize(self.file_path) > 0:
+            backup_dir = os.path.join(parent or ".", "backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            try:
+                shutil.copy2(self.file_path, os.path.join(backup_dir, f"outsourced_{ts}.txt"))
+                # prune text backups as well
+                backups = sorted(
+                    [os.path.join(backup_dir, f) for f in os.listdir(backup_dir) if f.startswith("outsourced_")],
+                    key=os.path.getmtime,
+                    reverse=True,
+                )
+                for old in backups[30:]:
+                    try:
+                        os.remove(old)
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+
+        tmp_path = self.file_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write("# Outsourced products list (barcodes forwarded to third-party suppliers)\n")
+            for pat in self._patterns:
+                f.write(f"{pat}\n")
+
+        os.replace(tmp_path, self.file_path)
+        self._last_mtime = os.path.getmtime(self.file_path)
 
     def is_outsourced_barcode(self, barcode: Optional[str]) -> Tuple[bool, Optional[str]]:
         """Return (is_outsourced, matching_rule)."""

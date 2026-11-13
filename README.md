@@ -52,12 +52,13 @@ python -m pip install -r requirements-build.txt
 .\build_windows.bat
 ```
 
-The executable and release ZIP are created under `dist/`. The public release
+The executable and release ZIP are created under `project_extras/dist/`, with
+PyInstaller intermediate files under `project_extras/build/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.9
-git push origin v1.0.9
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
