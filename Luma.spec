@@ -15,6 +15,7 @@ a = Analysis(
         "trendyol_labels",
         "trendyol_watcher",
         "reportlab.graphics.barcode.code128",
+        "reportlab.graphics.barcode.code93",
         "reportlab.pdfbase.ttfonts",
     ],
     hookspath=[],
