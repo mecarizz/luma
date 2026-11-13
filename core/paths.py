@@ -1,10 +1,11 @@
-"""Resolve bundled resources and per-user writable application data paths."""
+"""Resolve bundled resources, per-user writable application data paths, and backups."""
 from __future__ import annotations
 
 import os
 import shutil
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 APP_NAME = "Luma"
 DEFAULT_DATA_FILES = ("products.json", "outsourced_products.txt")
@@ -15,6 +16,7 @@ MIGRATABLE_DATA_FILES = {
     "printed_packages.json": ("printed_packages.json", "data/printed_packages.json"),
     os.path.join("data", "sellers.json"): (os.path.join("data", "sellers.json"),),
 }
+MAX_BACKUP_RETENTION = 30
 
 
 def is_frozen() -> bool:
@@ -41,6 +43,42 @@ def get_data_dir() -> Path:
 
 def get_data_path(name: str) -> Path:
     return get_data_dir() / name
+
+
+def prune_backups(backup_dir: str | Path, prefix: str, keep: int = MAX_BACKUP_RETENTION) -> List[Path]:
+    """Prune older backups matching prefix in backup_dir, retaining the most recent `keep` files."""
+    backup_path = Path(backup_dir)
+    if not backup_path.is_dir():
+        return []
+
+    backups = sorted(
+        [p for p in backup_path.iterdir() if p.is_file() and p.name.startswith(prefix) and p.suffix == ".json"],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    removed = []
+    for old_backup in backups[keep:]:
+        try:
+            old_backup.unlink()
+            removed.append(old_backup)
+        except OSError:
+            pass
+    return removed
+
+
+def find_latest_backup(backup_dir: str | Path, prefix: str) -> Optional[Path]:
+    """Find the most recent valid backup file matching prefix."""
+    backup_path = Path(backup_dir)
+    if not backup_path.is_dir():
+        return None
+
+    backups = sorted(
+        [p for p in backup_path.iterdir() if p.is_file() and p.name.startswith(prefix) and p.suffix == ".json" and p.stat().st_size > 0],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return backups[0] if backups else None
 
 
 def initialize_runtime_data() -> None:
