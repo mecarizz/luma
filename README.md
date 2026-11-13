@@ -18,6 +18,10 @@ Add seller credentials through the Seller Config tab. Credentials and operationa
 data are stored locally under `%LOCALAPPDATA%\Luma` in the packaged app. For
 security, never commit `.env`, seller profiles, product/order data, or logs.
 
+Use the **Product Catalog** tab to search and filter products, add or edit
+catalog entries, and remove products. Catalog edits are saved locally with
+automatic backups.
+
 The desktop app starts monitoring enabled sellers automatically. Depending on
 their settings, it may change cargo providers and print labels. For a safe
 standalone watcher check, use:
@@ -48,8 +52,8 @@ The executable and release ZIP are created under `dist/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes

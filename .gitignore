@@ -24,6 +24,7 @@ venv/
 /backups/
 /archive/
 /backup_original/
+/103/
 /luma_data.db
 *.sqlite
 *.sqlite3

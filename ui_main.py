@@ -113,6 +113,9 @@ class LumaMainWindow(QMainWindow):
             )
             self.tab_sellers.setEnabled(False)
 
+        # AppController initializes/migrates the per-user data directory. Refresh
+        # afterward so the catalog UI sees products.json copied from legacy installs.
+        self.tab_catalog.refresh()
         QTimer.singleShot(1200, self.check_for_updates_on_startup)
 
     def check_for_updates_on_startup(self) -> None:
