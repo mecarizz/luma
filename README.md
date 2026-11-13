@@ -56,8 +56,8 @@ The executable and release ZIP are created under `dist/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.0.8
-git push origin v1.0.8
+git tag v1.0.9
+git push origin v1.0.9
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
