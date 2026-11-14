@@ -34,6 +34,7 @@ class UpdateRelease:
     page_url: str
     asset_url: str
     checksum_url: str
+    importance_level: int = 1
 
 
 def _version_tuple(value: str) -> Tuple[int, ...]:
@@ -41,6 +42,22 @@ def _version_tuple(value: str) -> Tuple[int, ...]:
     if not match:
         raise ValueError(f"Unsupported release version tag: {value!r}")
     return tuple(int(part) for part in match.group(1).split("."))
+
+
+def _update_importance(notes: str) -> int:
+    match = re.search(
+        r"(?im)^\s*Luma-Update-Level:\s*(\S+)\s*$",
+        notes,
+    )
+    if match is None:
+        return 1
+    try:
+        level = int(match.group(1))
+    except ValueError as exc:
+        raise ValueError("Luma-Update-Level must be 1, 2, or 3.") from exc
+    if level not in (1, 2, 3):
+        raise ValueError("Luma-Update-Level must be 1, 2, or 3.")
+    return level
 
 
 def get_latest_release(current_version: str) -> Optional[UpdateRelease]:
@@ -74,14 +91,22 @@ def get_latest_release(current_version: str) -> Optional[UpdateRelease]:
     if not asset_url.startswith(asset_prefix) or not checksum_url.startswith(asset_prefix):
         raise RuntimeError("GitHub returned an unexpected release asset URL.")
 
+    notes = str(release.get("body") or "")
+    importance_level = _update_importance(notes)
+    display_notes = re.sub(
+        r"(?im)^\s*Luma-Update-Level:\s*\S+\s*$",
+        "",
+        notes,
+    ).strip()
     return UpdateRelease(
         version=version,
         tag=tag,
         title=str(release.get("name") or f"Luma {tag}"),
-        notes=str(release.get("body") or ""),
+        notes=display_notes,
         page_url=str(release.get("html_url") or ""),
         asset_url=asset_url,
         checksum_url=checksum_url,
+        importance_level=importance_level,
     )
 
 

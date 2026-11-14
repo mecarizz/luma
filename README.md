@@ -57,18 +57,33 @@ PyInstaller intermediate files under `project_extras/build/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
 the ZIP, and includes its SHA-256 checksum. In the packaged app, Luma checks for
-updates shortly after startup and asks before downloading or installing one.
+updates shortly after startup and then in the background every four hours.
+Choose a two-, four-, or eight-hour interval in Settings, or turn off automatic
+checks. Available updates download and verify in the background. The version
+indicator in the lower-left shows when the running app is outdated and when an
+update is ready.
+
+Release authors can set an update's importance by adding exactly one line to
+the GitHub release notes: `Luma-Update-Level: 1`, `Luma-Update-Level: 2`, or
+`Luma-Update-Level: 3`. Omitting the line defaults to Level 1.
+
+- **Level 1 (Normal):** non-blocking status notice shown once for that version.
+- **Level 2 (Important):** prominent restart recommendation, with reminders no
+  more often than every 24 hours.
+- **Level 3 (Critical):** Luma waits for an active order operation to finish,
+  pauses automatic monitoring, then requires a restart before further use.
+
 Verified updates are installed to a versioned folder under
 `%LOCALAPPDATA%\Luma\app`, and a version-specific desktop shortcut is created.
 This per-user install does not require administrator permission and does not
 overwrite the currently running executable. You can launch the new version
-immediately or use its desktop shortcut later. You can also choose
+from the version indicator or use its desktop shortcut later. You can also choose
 **Help > Check for Updates** to check manually. Releases are public, so only
 publish data that is intended to be public.
 

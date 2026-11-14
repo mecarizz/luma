@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from functools import partial
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from app_controller import AppController
 from core.i18n import ask_yes_no, tr
-from core.paths import is_frozen
+from core.paths import get_data_path, is_frozen
 from core.updates import (
     UpdateRelease,
     download_update,
@@ -40,7 +41,7 @@ from ui_orders import OrdersTab
 from ui_reports import ReportsTab
 from ui_sellers import SellersTab
 from ui_settings import SettingsTab
-from ui_theme import DARK_STYLESHEET
+from ui_theme import DARK_STYLESHEET, apply_dark_palette
 
 
 class _ReleaseCheckWorker(QThread):
@@ -170,10 +171,10 @@ class LumaMainWindow(QMainWindow):
         health_layout.addWidget(self.health_note)
         side.addWidget(health)
 
-        version_label = QLabel(f"Version {VERSION}")
-        version_label.setObjectName("muted")
-        version_label.setStyleSheet("padding-top: 4px; font-size: 8.5pt;")
-        side.addWidget(version_label)
+        self.update_status_button = QPushButton(f"Version {VERSION}")
+        self.update_status_button.setObjectName("versionStatus")
+        self.update_status_button.setCursor(Qt.PointingHandCursor)
+        side.addWidget(self.update_status_button)
 
         shell.addWidget(self.sidebar)
 
@@ -205,6 +206,15 @@ class LumaMainWindow(QMainWindow):
         self._release_check_worker = None
         self._update_download_worker = None
         self._release_check_silent = False
+        self._update_ready_path: Path | None = None
+        self._update_ready_release: UpdateRelease | None = None
+        self._mandatory_update_pending = False
+        self._mandatory_update_enforcing = False
+        self.update_status_button.clicked.connect(self._handle_update_status_clicked)
+        self._update_check_timer = QTimer(self)
+        self._update_check_timer.timeout.connect(
+            lambda: self.check_for_updates(silent=True)
+        )
 
         # Menu Bar
         self.language_menu = self.menuBar().addMenu("")
@@ -223,12 +233,21 @@ class LumaMainWindow(QMainWindow):
 
         self.help_menu = self.menuBar().addMenu("")
         self.update_action = self.help_menu.addAction("")
-        self.update_action.triggered.connect(self.check_for_updates)
+        self.update_action.triggered.connect(lambda: self.check_for_updates())
 
         # Wire dashboard navigation requests
         self.tab_dashboard.navigate_requested.connect(self.navigate)
         self.tab_settings.language_changed.connect(self.set_language)
         self.tab_settings.check_updates_requested.connect(self.check_for_updates)
+        self.tab_settings.auto_update_checks_changed.connect(
+            self._configure_update_schedule
+        )
+        self.tab_settings.update_interval_changed.connect(
+            lambda _hours: self._configure_update_schedule(
+                self.settings.value("auto_check_updates", True, type=bool)
+            )
+        )
+        self.tab_orders.operation_finished.connect(self._on_order_operation_finished)
 
         # Setup Keyboard Shortcuts
         self._setup_shortcuts()
@@ -260,7 +279,9 @@ class LumaMainWindow(QMainWindow):
         self.tab_dashboard.refresh_metrics()
         self.tab_reports.refresh_report()
 
-        if self.settings.value("auto_check_updates", True, type=bool):
+        auto_check = self.settings.value("auto_check_updates", True, type=bool)
+        self._configure_update_schedule(auto_check)
+        if auto_check and is_frozen():
             QTimer.singleShot(1500, self.check_for_updates_on_startup)
 
     def _setup_shortcuts(self) -> None:
@@ -327,7 +348,17 @@ class LumaMainWindow(QMainWindow):
 
     def check_for_updates_on_startup(self) -> None:
         """Check quietly for updates after the packaged application has opened."""
-        self.check_for_updates(silent=True)
+        if self.settings.value("auto_check_updates", True, type=bool):
+            self.check_for_updates(silent=True)
+
+    def _configure_update_schedule(self, enabled: bool) -> None:
+        self._update_check_timer.stop()
+        if not enabled or not is_frozen():
+            return
+        hours = self.settings.value("update_check_interval_hours", 4, type=int)
+        if hours not in (2, 4, 8):
+            hours = 4
+        self._update_check_timer.start(hours * 60 * 60 * 1000)
 
     def check_for_updates(self, silent: bool = False):
         if not is_frozen():
@@ -358,6 +389,10 @@ class LumaMainWindow(QMainWindow):
 
     def _on_release_checked(self, release):
         if release is None:
+            self.update_status_button.setText(f"Version {VERSION}")
+            self.update_status_button.setObjectName("versionStatus")
+            self.update_status_button.style().unpolish(self.update_status_button)
+            self.update_status_button.style().polish(self.update_status_button)
             if not self._release_check_silent:
                 QMessageBox.information(
                     self,
@@ -366,24 +401,56 @@ class LumaMainWindow(QMainWindow):
                 )
             return
 
-        notes = release.notes.strip()[:3000] or "No release notes were provided."
-        update_text = tr(
-            "{title}\nVersion {version} is available (current: {current}).",
-            self.language,
-        ).format(title=release.title, version=release.version, current=VERSION)
-        prompt_text = tr(
-            "{notes}\n\nDownload and install this update?",
-            self.language,
-        ).format(notes=f"{update_text}\n\n{notes}")
-        if not ask_yes_no(
-            self,
-            "Luma update available",
-            "{prompt}",
-            self.language,
-            prompt=prompt_text,
-        ):
+        self._update_ready_release = release
+        installed_path = get_data_path("app") / f"v{release.version}" / "Luma.exe"
+        if installed_path.is_file():
+            self._update_ready_path = installed_path
+            self._set_update_status(release, ready=True)
+            self._notify_update_ready()
             return
 
+        self._set_update_status(release, ready=False)
+        self.statusBar().showMessage(
+            tr("Downloading update v{version} in the background", self.language).format(
+                version=release.version
+            ),
+            15000,
+        )
+        self._start_update_download(release)
+
+    def _set_update_status(self, release: UpdateRelease, ready: bool) -> None:
+        if release.importance_level == 3:
+            text = tr("Critical update required: v{version}", self.language).format(
+                version=release.version
+            )
+            object_name = "versionStatusCritical"
+        elif ready:
+            text = tr("Update ready: v{version}", self.language).format(
+                version=release.version
+            )
+            object_name = (
+                "versionStatusImportant"
+                if release.importance_level == 2
+                else "versionStatus"
+            )
+        else:
+            text = tr("Version {version} (outdated)", self.language).format(
+                version=VERSION
+            )
+            object_name = (
+                "versionStatusImportant"
+                if release.importance_level == 2
+                else "versionStatus"
+            )
+        self.update_status_button.setText(text)
+        self.update_status_button.setObjectName(object_name)
+        self.update_status_button.setToolTip(release.notes[:3000])
+        self.update_status_button.style().unpolish(self.update_status_button)
+        self.update_status_button.style().polish(self.update_status_button)
+
+    def _start_update_download(self, release: UpdateRelease) -> None:
+        if self._update_download_worker is not None:
+            return
         self.menuBar().setEnabled(False)
         self._update_download_worker = _UpdateDownloadWorker(release)
         self._update_download_worker.completed.connect(self._on_update_downloaded)
@@ -394,27 +461,107 @@ class LumaMainWindow(QMainWindow):
     def _on_update_download_finished(self):
         self._update_download_worker = None
         self.menuBar().setEnabled(True)
+        self.update_action.setEnabled(self._release_check_worker is None)
 
     def _on_update_downloaded(self, installed_path):
-        answer = ask_yes_no(
-            self,
-            "Update ready",
-            "The update is installed in your user folder, and a desktop shortcut was created. Start it now?",
-            self.language,
-        )
-        if not answer:
-            QMessageBox.information(
+        self._update_ready_path = Path(installed_path)
+        if self._update_ready_release is None:
+            self._update_ready_path = None
+            QMessageBox.critical(
                 self,
-                tr("Update installed", self.language),
+                tr("Update failed", self.language),
                 tr(
-                    "The update is installed at:\n{path}\nUse the new Luma shortcut on your desktop to open it.",
+                    "The downloaded update has no matching release information. Check for updates again.",
                     self.language,
-                ).format(path=Path(installed_path)),
+                ),
             )
             return
+        self._set_update_status(self._update_ready_release, ready=True)
+        self._notify_update_ready()
 
+    def _notify_update_ready(self) -> None:
+        release = self._update_ready_release
+        if release is None or self._update_ready_path is None:
+            return
+
+        if release.importance_level == 3:
+            self._mandatory_update_pending = True
+            if self.tab_orders.operation_in_progress:
+                self.statusBar().showMessage(
+                    tr(
+                        "Critical update ready. Finish the current order operation; Luma will require the update when safe.",
+                        self.language,
+                    ),
+                    30000,
+                )
+                return
+            self._enforce_mandatory_update()
+            return
+
+        if release.importance_level == 1:
+            if self.settings.value("normal_update_notified_version", "") != release.version:
+                self.settings.setValue("normal_update_notified_version", release.version)
+                self.statusBar().showMessage(
+                    tr("Update v{version} is ready. Select the version label to restart and update.", self.language).format(
+                        version=release.version
+                    ),
+                    20000,
+                )
+            return
+
+        now = time.time()
+        reminded_version = self.settings.value("important_update_reminder_version", "")
+        reminded_at = self.settings.value(
+            "important_update_reminder_at", 0.0, type=float
+        )
+        if (
+            reminded_version == release.version
+            and now - reminded_at < 24 * 60 * 60
+        ):
+            return
+        self.settings.setValue("important_update_reminder_version", release.version)
+        self.settings.setValue("important_update_reminder_at", now)
+        if ask_yes_no(
+            self,
+            tr("Important update", self.language),
+            tr(
+                "Important update v{version} is ready. Restart Luma now? You can choose later; you will be reminded after 24 hours.",
+                self.language,
+            ).format(version=release.version),
+            self.language,
+        ):
+            self._restart_with_update()
+
+    def _handle_update_status_clicked(self) -> None:
+        if self._update_ready_path is None:
+            self.check_for_updates()
+            return
+        if self._mandatory_update_pending:
+            self._enforce_mandatory_update()
+            return
+        release = self._update_ready_release
+        if release is None:
+            self.check_for_updates()
+            return
+        notes = release.notes.strip()[:3000] or tr(
+            "No release notes were provided.", self.language
+        )
+        if ask_yes_no(
+            self,
+            tr("Update ready", self.language),
+            tr(
+                "Version {version} is ready to install.\n\n{notes}\n\nRestart Luma now?",
+                self.language,
+            ).format(version=release.version, notes=notes),
+            self.language,
+        ):
+            self._restart_with_update()
+
+    def _restart_with_update(self) -> None:
+        if self._update_ready_path is None:
+            return
         try:
-            launch_update(Path(installed_path))
+            launch_update(self._update_ready_path)
         except (OSError, RuntimeError) as exc:
             QMessageBox.critical(
                 self,
@@ -424,11 +571,53 @@ class LumaMainWindow(QMainWindow):
             return
         QApplication.quit()
 
+    def _on_order_operation_finished(self) -> None:
+        if self._mandatory_update_pending:
+            self._enforce_mandatory_update()
+
+    def _enforce_mandatory_update(self) -> None:
+        if (
+            not self._mandatory_update_pending
+            or self._mandatory_update_enforcing
+            or self._update_ready_path is None
+        ):
+            return
+        if self.tab_orders.operation_in_progress:
+            return
+        if QApplication.activeModalWidget() is not None:
+            QTimer.singleShot(1000, self._enforce_mandatory_update)
+            return
+
+        self._mandatory_update_enforcing = True
+        if self.controller is not None:
+            self.controller.pause_watcher()
+        self.tabs.setEnabled(False)
+        prompt = QMessageBox(self)
+        prompt.setIcon(QMessageBox.Icon.Warning)
+        prompt.setWindowTitle(tr("Critical update required", self.language))
+        prompt.setText(
+            tr(
+                "Save or finish any work now. This critical update is required before Luma can continue. Select Restart and Update to continue.",
+                self.language,
+            )
+        )
+        prompt.setStandardButtons(QMessageBox.StandardButton.Ok)
+        prompt.button(QMessageBox.StandardButton.Ok).setText(
+            tr("Restart and Update", self.language)
+        )
+        prompt.setEscapeButton(QMessageBox.StandardButton.NoButton)
+        prompt.setWindowFlag(Qt.WindowCloseButtonHint, False)
+        prompt.exec()
+        self._restart_with_update()
+        self._mandatory_update_enforcing = False
+
     def _on_update_failed(self, message):
-        if self._release_check_silent and self._update_download_worker is None:
+        if self._release_check_silent:
             self.statusBar().showMessage(
-                tr("Automatic update check failed", self.language),
-                8000,
+                tr("Automatic update check failed: {error}", self.language).format(
+                    error=message
+                ),
+                15000,
             )
             return
         QMessageBox.warning(self, tr("Update check failed", self.language), message)
@@ -460,6 +649,13 @@ class LumaMainWindow(QMainWindow):
         self.update_action.setText(tr("Check for Updates", language))
         self.tagline.setText(tr("COMMERCIAL OPERATIONS SUITE", language))
         self.health_note.setText(tr("Luma services", language))
+        if self._update_ready_release is None:
+            self.update_status_button.setText(f"Version {VERSION}")
+        else:
+            self._set_update_status(
+                self._update_ready_release,
+                ready=self._update_ready_path is not None,
+            )
         self.set_monitoring_state(
             self.controller is not None if hasattr(self, "controller") else False
         )
@@ -467,6 +663,19 @@ class LumaMainWindow(QMainWindow):
             action.setChecked(code == language)
 
     def closeEvent(self, event):
+        if self._mandatory_update_pending and self._update_ready_path is not None:
+            if self.tab_orders.operation_in_progress:
+                self.statusBar().showMessage(
+                    tr(
+                        "Critical update ready. Finish the current order operation; Luma will require the update when safe.",
+                        self.language,
+                    ),
+                    30000,
+                )
+            else:
+                self._enforce_mandatory_update()
+            event.ignore()
+            return
         if hasattr(self, "tab_orders") and not self.tab_orders.stop_worker():
             QMessageBox.information(
                 self,
@@ -486,6 +695,7 @@ class LumaMainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    apply_dark_palette(app)
     window = LumaMainWindow()
     window.show()
     sys.exit(app.exec())

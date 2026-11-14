@@ -339,6 +339,10 @@ class OrdersTab(QWidget):
     operation_finished = Signal()
     log_emitted = Signal(str)
 
+    @property
+    def operation_in_progress(self) -> bool:
+        return self._worker is not None
+
     def __init__(self, seller_manager=None):
         super().__init__()
         self.seller_manager = seller_manager

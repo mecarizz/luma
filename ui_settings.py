@@ -38,6 +38,8 @@ class SettingsTab(QWidget):
 
     language_changed = Signal(str)
     check_updates_requested = Signal()
+    auto_update_checks_changed = Signal(bool)
+    update_interval_changed = Signal(int)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -91,14 +93,33 @@ class SettingsTab(QWidget):
         lang_row.addWidget(self.combo_language, 1)
         cg_layout.addLayout(lang_row)
 
-        self.check_auto_update_startup = QCheckBox("Check for software updates automatically at startup")
+        self.check_auto_update_startup = QCheckBox(
+            "Check for software updates automatically while Luma is running"
+        )
         self.check_auto_update_startup.setChecked(
             self.settings.value("auto_check_updates", True, type=bool)
         )
-        self.check_auto_update_startup.toggled.connect(
-            lambda val: self.settings.setValue("auto_check_updates", val)
-        )
+        self.check_auto_update_startup.toggled.connect(self._on_auto_update_checks_changed)
         cg_layout.addWidget(self.check_auto_update_startup)
+
+        interval_row = QHBoxLayout()
+        self.lbl_update_interval = QLabel("Background update check interval:")
+        self.lbl_update_interval.setStyleSheet("font-weight: 600; color: #cbd5e1;")
+        self.combo_update_interval = QComboBox()
+        for hours in (2, 4, 8):
+            self.combo_update_interval.addItem(f"Every {hours} hours", hours)
+        saved_interval = self.settings.value("update_check_interval_hours", 4, type=int)
+        interval_index = self.combo_update_interval.findData(
+            saved_interval if saved_interval in (2, 4, 8) else 4
+        )
+        self.combo_update_interval.setCurrentIndex(max(0, interval_index))
+        self.combo_update_interval.currentIndexChanged.connect(
+            self._on_update_interval_changed
+        )
+        self.combo_update_interval.setEnabled(self.check_auto_update_startup.isChecked())
+        interval_row.addWidget(self.lbl_update_interval)
+        interval_row.addWidget(self.combo_update_interval, 1)
+        cg_layout.addLayout(interval_row)
         layout.addWidget(card_general)
 
         # ---------------- Section 2: Thermal Printing Defaults ----------------
@@ -239,7 +260,15 @@ class SettingsTab(QWidget):
         self.header.set_language(language)
         self.lbl_sec_general.setText(tr("General & Localization", language))
         self.lbl_language.setText(tr("Application Language:", language))
-        self.check_auto_update_startup.setText(tr("Check for software updates automatically at startup", language))
+        self.check_auto_update_startup.setText(
+            tr("Check for software updates automatically while Luma is running", language)
+        )
+        self.lbl_update_interval.setText(tr("Background update check interval:", language))
+        for index, hours in enumerate((2, 4, 8)):
+            self.combo_update_interval.setItemText(
+                index,
+                tr("Every {hours} hours", language).format(hours=hours),
+            )
         self.lbl_sec_print.setText(tr("Thermal Printer & Hardware Defaults", language))
         self.lbl_label_size.setText(tr("Default Thermal Label Size:", language))
         self.lbl_shift.setText(tr("Default Vertical Shift Y (mm):", language))
@@ -256,6 +285,17 @@ class SettingsTab(QWidget):
         self.lbl_about_desc.setText(
             tr("High-reliability multi-seller management, automated cargo provider switching, and direct thermal label printing for Trendyol e-commerce sellers.", language)
         )
+
+    def _on_auto_update_checks_changed(self, enabled: bool) -> None:
+        self.settings.setValue("auto_check_updates", enabled)
+        self.combo_update_interval.setEnabled(enabled)
+        self.auto_update_checks_changed.emit(enabled)
+
+    def _on_update_interval_changed(self, _index: int) -> None:
+        hours = self.combo_update_interval.currentData()
+        if hours in (2, 4, 8):
+            self.settings.setValue("update_check_interval_hours", hours)
+            self.update_interval_changed.emit(hours)
 
     def _on_language_changed(self) -> None:
         selected = self.combo_language.currentData()

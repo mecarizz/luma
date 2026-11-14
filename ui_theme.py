@@ -1,6 +1,8 @@
 """Shared visual theme and design system tokens for the Luma desktop application."""
 from __future__ import annotations
 
+from PySide6.QtGui import QColor, QPalette
+
 # Color Palette Tokens
 BG_BASE = "#0b0f19"         # Deep obsidian background
 BG_SURFACE = "#111827"      # Sidebar & top header background
@@ -29,6 +31,42 @@ STATUS_ERROR_FG = "#f87171"
 STATUS_ERROR_BG = "#7f1d1d"
 STATUS_INFO_FG = "#38bdf8"
 STATUS_INFO_BG = "#0c4a6e"
+
+
+def apply_dark_palette(application) -> None:
+    """Keep native Qt controls readable regardless of the Windows color mode."""
+    palette = QPalette()
+    colors = {
+        QPalette.ColorRole.Window: QColor(BG_BASE),
+        QPalette.ColorRole.WindowText: QColor(TEXT_PRIMARY),
+        QPalette.ColorRole.Base: QColor(BG_INPUT),
+        QPalette.ColorRole.AlternateBase: QColor(BG_PANEL),
+        QPalette.ColorRole.ToolTipBase: QColor(BG_ELEVATED),
+        QPalette.ColorRole.ToolTipText: QColor(TEXT_PRIMARY),
+        QPalette.ColorRole.Text: QColor(TEXT_PRIMARY),
+        QPalette.ColorRole.Button: QColor(BG_PANEL),
+        QPalette.ColorRole.ButtonText: QColor(TEXT_PRIMARY),
+        QPalette.ColorRole.BrightText: QColor("#ffffff"),
+        QPalette.ColorRole.Highlight: QColor(ACCENT_TEAL_ACTIVE),
+        QPalette.ColorRole.HighlightedText: QColor("#ffffff"),
+        QPalette.ColorRole.PlaceholderText: QColor(TEXT_SECONDARY),
+    }
+    for group in (
+        QPalette.ColorGroup.Active,
+        QPalette.ColorGroup.Inactive,
+        QPalette.ColorGroup.Disabled,
+    ):
+        for role, color in colors.items():
+            palette.setColor(group, role, color)
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+        QPalette.ColorRole.HighlightedText,
+    ):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(TEXT_MUTED))
+    application.setPalette(palette)
+
 
 DARK_STYLESHEET = """
 /* Base Application & Window Styling */
@@ -172,6 +210,39 @@ QPushButton#navButton:checked {
     background-color: #0e3538;
     color: #2dd4bf;
     border: 1px solid #134e4a;
+    font-weight: 700;
+}
+
+QPushButton#versionStatus {
+    color: #94a3b8;
+    background-color: transparent;
+    border: 1px solid transparent;
+    text-align: left;
+    padding: 5px 2px;
+    font-size: 8.5pt;
+}
+
+QPushButton#versionStatus:hover {
+    color: #f8fafc;
+    background-color: #162032;
+}
+
+QPushButton#versionStatusImportant {
+    color: #fbbf24;
+    background-color: #78350f;
+    border: 1px solid #92400e;
+    text-align: left;
+    padding: 5px 8px;
+    font-size: 8.5pt;
+}
+
+QPushButton#versionStatusCritical {
+    color: #f87171;
+    background-color: #7f1d1d;
+    border: 1px solid #991b1b;
+    text-align: left;
+    padding: 5px 8px;
+    font-size: 8.5pt;
     font-weight: 700;
 }
 

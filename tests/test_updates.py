@@ -23,11 +23,26 @@ class TestUpdates(unittest.TestCase):
         with self.assertRaises(ValueError):
             updates._version_tuple("latest")
 
+    def test_update_importance_defaults_to_normal_and_parses_levels(self):
+        self.assertEqual(updates._update_importance("Bug fixes and improvements."), 1)
+        self.assertEqual(
+            updates._update_importance("Release summary\nLuma-Update-Level: 2"),
+            2,
+        )
+        self.assertEqual(updates._update_importance("Luma-Update-Level: 3"), 3)
+
+    def test_update_importance_rejects_invalid_level(self):
+        for notes in ("Luma-Update-Level: 0", "Luma-Update-Level: 4", "Luma-Update-Level: urgent"):
+            with self.subTest(notes=notes):
+                with self.assertRaisesRegex(ValueError, "must be 1, 2, or 3"):
+                    updates._update_importance(notes)
+
     def test_latest_release_requires_archive_and_checksum(self):
         response = Mock(status_code=200)
         response.json.return_value = {
             "tag_name": "v1.1.0",
             "name": "Luma 1.1.0",
+            "body": "Release notes\nLuma-Update-Level: 2",
             "assets": [
                 {
                     "name": updates.RELEASE_ASSET,
@@ -42,6 +57,8 @@ class TestUpdates(unittest.TestCase):
         with patch.object(updates.requests, "get", return_value=response):
             release = updates.get_latest_release("1.0.0")
         self.assertEqual(release.version, "1.1.0")
+        self.assertEqual(release.importance_level, 2)
+        self.assertEqual(release.notes, "Release notes")
 
     def test_current_version_returns_no_update(self):
         response = Mock(status_code=200)
