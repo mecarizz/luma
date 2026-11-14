@@ -57,8 +57,8 @@ PyInstaller intermediate files under `project_extras/build/`. The public release
 workflow runs when a version tag is pushed:
 
 ```powershell
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.1
+git push origin v1.2.1
 ```
 
 The tag must use `vMAJOR.MINOR.PATCH`. GitHub Actions builds the EXE, publishes
