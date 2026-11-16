@@ -53,7 +53,7 @@ class TestTrendyolInventory(unittest.TestCase):
                 "totalPages": 2,
                 "content": [
                     {
-                        "productMainId": "Product two",
+                        "name": "Product two",
                         "variants": [{"barcode": "BC-3", "quantity": 0}],
                     }
                 ],

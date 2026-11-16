@@ -402,19 +402,40 @@ class StockTab(QWidget):
             self.refresh_inventory()
 
     def _render_inventory(self) -> None:
+        catalog_products = self.catalog.list_all()
         catalog_by_barcode = {
-            normalize_identifier(product.barcode): product
-            for product in self.catalog.list_all()
+            normalize_identifier(item.barcode): item for item in catalog_products
         }
+        catalog_by_stock_code: Dict[str, List[Any]] = {}
+        for item in catalog_products:
+            stock_code = normalize_identifier(item.stock_code)
+            if stock_code:
+                catalog_by_stock_code.setdefault(stock_code, []).append(item)
+
+        profile = self._selected_profile()
+        seller_name = profile.name.strip().casefold() if profile else ""
         self.inventory_table.setRowCount(0)
         for product in self._inventory:
             catalog_product = catalog_by_barcode.get(
                 normalize_identifier(product.barcode)
             )
+            if not catalog_product and product.stock_code:
+                candidates = catalog_by_stock_code.get(
+                    normalize_identifier(product.stock_code), []
+                )
+                seller_matches = [
+                    item
+                    for item in candidates
+                    if seller_name and (item.seller or "").strip().casefold() == seller_name
+                ]
+                if len(seller_matches) == 1:
+                    catalog_product = seller_matches[0]
+                elif len(candidates) == 1:
+                    catalog_product = candidates[0]
             display_name = (
                 catalog_product.display_name
-                if catalog_product and catalog_product.display_name
-                else product.title
+                if catalog_product and catalog_product.display_name.strip()
+                else product.title.strip() or tr("Unknown", self.language)
             )
             row = self.inventory_table.rowCount()
             self.inventory_table.insertRow(row)
@@ -429,11 +450,24 @@ class StockTab(QWidget):
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
                 cell.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if column == 1:
+                    cell.setToolTip(display_name)
                 self.inventory_table.setItem(row, column, cell)
 
             quantity_input = QSpinBox()
             quantity_input.setRange(0, MAX_SELLABLE_QUANTITY)
-            quantity_input.setMaximumWidth(120)
+            quantity_input.setMinimumWidth(112)
+            quantity_input.setMaximumWidth(132)
+            quantity_input.setAlignment(Qt.AlignCenter)
+            quantity_input.setStyleSheet(
+                "QSpinBox { background-color: #0f172a; color: #f8fafc; "
+                "border: 1px solid #2a3b54; border-radius: 6px; padding: 2px 6px; "
+                "selection-background-color: #0d9488; selection-color: #ffffff; }"
+                "QSpinBox:focus { border: 2px solid #2dd4bf; "
+                "background-color: #111c2e; color: #ffffff; }"
+                "QSpinBox:disabled { color: #64748b; background-color: #0b1120; "
+                "border-color: #1e293b; }"
+            )
             if product.quantity is None or not 0 <= product.quantity <= MAX_SELLABLE_QUANTITY:
                 quantity_input.setValue(0)
                 quantity_input.setEnabled(False)

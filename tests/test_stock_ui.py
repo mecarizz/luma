@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QSpinBox
 
+from core.catalog import ProductItem
 from core.seller_models import SellerProfile
 from core.trendyol_inventory import InventoryProduct
 from ui_stock import StockTab
@@ -46,6 +47,43 @@ class TestStockTab(unittest.TestCase):
             [{"barcode": "BC-1", "quantity": 8}],
         )
         self.assertTrue(self.tab.apply_button.isEnabled())
+
+    def test_live_product_title_is_visible(self):
+        self.tab._inventory = [
+            InventoryProduct("BC-1", 5, "SKU-1", "Live product title"),
+        ]
+        self.tab._render_inventory()
+
+        self.assertEqual(self.tab.inventory_table.item(0, 1).text(), "Live product title")
+
+    def test_catalog_title_can_match_by_seller_sku(self):
+        profile = SellerProfile(
+            seller_id="123456",
+            name="Test Seller",
+        )
+        manager = type(
+            "SellerManagerStub",
+            (),
+            {"list_all": lambda _self: [profile]},
+        )()
+        self.tab.set_manager(manager)
+        self.tab.catalog.list_all.return_value = [
+            ProductItem(
+                barcode="OTHER-BC",
+                display_name="Catalog product title",
+                stock_code="SKU-1",
+                seller="Test Seller",
+            )
+        ]
+        self.tab._inventory = [
+            InventoryProduct("BC-1", 5, "SKU-1", ""),
+        ]
+        self.tab._render_inventory()
+
+        self.assertEqual(
+            self.tab.inventory_table.item(0, 1).text(),
+            "Catalog product title",
+        )
 
     def test_unknown_live_quantity_cannot_be_changed(self):
         self._set_sellers("123456")

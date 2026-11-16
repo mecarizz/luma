@@ -148,12 +148,17 @@ def fetch_inventory(profile: SellerProfile) -> List[InventoryProduct]:
                     raise RuntimeError(
                         f"Trendyol returned an invalid stock quantity for barcode {barcode}."
                     )
-                title = (
-                    product.get("title")
-                    or product.get("productName")
-                    or product.get("productMainId")
-                    or ""
+                title = next(
+                    (
+                        value.strip()
+                        for key in ("title", "productName", "productTitle", "name")
+                        for value in (product.get(key),)
+                        if isinstance(value, str) and value.strip()
+                    ),
+                    "",
                 )
+                if not title:
+                    title = str(product.get("productMainId") or "").strip()
                 products.append(
                     InventoryProduct(
                         barcode=barcode,
