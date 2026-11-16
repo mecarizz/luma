@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -201,9 +202,16 @@ class _FetchOrdersWorker(QThread):
     completed = Signal(object)
     log_emitted = Signal(str)
 
-    def __init__(self, profiles: Iterable[SellerProfile]):
+    def __init__(
+        self,
+        profiles: Iterable[SellerProfile],
+        lookback_days: Optional[int] = None,
+        max_orders: Optional[int] = None,
+    ):
         super().__init__()
         self.profiles = list(profiles)
+        self.lookback_days = lookback_days
+        self.max_orders = max_orders
 
     def run(self) -> None:
         packages: List[Dict[str, Any]] = []
@@ -222,17 +230,29 @@ class _FetchOrdersWorker(QThread):
                     errors.append(error)
                     logger.error("Manual order fetch blocked: %s", error)
                     continue
+                remaining_orders = (
+                    None if self.max_orders is None else self.max_orders - len(packages)
+                )
+                if remaining_orders is not None and remaining_orders <= 0:
+                    break
+                lookback_days = (
+                    self.lookback_days
+                    if self.lookback_days is not None
+                    else profile.lookback_hours / 24
+                )
                 try:
                     logger.info(
-                        "[%s] Manual order fetch started: statuses=%s lookback_hours=%s",
+                        "[%s] Manual order fetch started: statuses=%s lookback_days=%s max_orders=%s",
                         profile.display_tag,
                         ",".join(profile.statuses),
-                        profile.lookback_hours,
+                        lookback_days,
+                        remaining_orders,
                     )
                     found = labels.fetch_packages(
                         profile.statuses,
-                        profile.lookback_hours / 24,
+                        lookback_days,
                         seller=_api_seller(profile),
+                        **({"max_orders": remaining_orders} if remaining_orders is not None else {}),
                     )
                     packages.extend(found)
                     logger.info(
@@ -404,6 +424,31 @@ class OrdersTab(QWidget):
 
         layout.addWidget(controls_card)
 
+        fetch_options_card = QFrame()
+        fetch_options_card.setObjectName("panel")
+        fetch_options_layout = QHBoxLayout(fetch_options_card)
+        fetch_options_layout.setContentsMargins(14, 8, 14, 8)
+        fetch_options_layout.setSpacing(10)
+
+        self.lookback_days_label = QLabel("Look back (days):")
+        self.lookback_days_input = QSpinBox()
+        self.lookback_days_input.setRange(1, 30)
+        self.lookback_days_input.setValue(7)
+
+        self.max_orders_label = QLabel("Maximum orders:")
+        self.max_orders_input = QSpinBox()
+        self.max_orders_input.setRange(1, 10000)
+        self.max_orders_input.setValue(10000)
+        self.max_orders_input.setSingleStep(200)
+
+        fetch_options_layout.addWidget(self.lookback_days_label)
+        fetch_options_layout.addWidget(self.lookback_days_input)
+        fetch_options_layout.addSpacing(12)
+        fetch_options_layout.addWidget(self.max_orders_label)
+        fetch_options_layout.addWidget(self.max_orders_input)
+        fetch_options_layout.addStretch()
+        layout.addWidget(fetch_options_card)
+
         # Status & Selection indicator row
         status_row = QHBoxLayout()
         self.status_label = QLabel("Fetch orders to choose packages for label printing.")
@@ -491,6 +536,8 @@ class OrdersTab(QWidget):
 
         self.fetch_button.setText(tr("Fetch Orders", language))
         self.seller_label.setText(tr("Seller:", language))
+        self.lookback_days_label.setText(tr("Look back (days):", language))
+        self.max_orders_label.setText(tr("Maximum orders:", language))
         self.status_label.setText(tr(self._status_template, language).format(**self._status_values))
         self.search_input.setPlaceholderText(tr("Filter by order no, package ID, customer...", language))
         self.btn_select_all.setText(tr("Select All", language))
@@ -632,8 +679,14 @@ class OrdersTab(QWidget):
                 tr("No seller profiles are configured.", self.language),
             )
             return
-        self._set_status("Fetching packages using each seller's configured statuses and lookback...")
-        worker = _FetchOrdersWorker(profiles)
+        lookback_days = self.lookback_days_input.value()
+        max_orders = self.max_orders_input.value()
+        self._set_status(
+            "Fetching up to {max_orders} packages from the last {days} days...",
+            max_orders=max_orders,
+            days=lookback_days,
+        )
+        worker = _FetchOrdersWorker(profiles, lookback_days, max_orders)
         worker.completed.connect(self._on_orders_fetched)
         worker.log_emitted.connect(self.log_emitted)
         self._start_worker(worker)

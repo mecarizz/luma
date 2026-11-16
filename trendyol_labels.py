@@ -376,12 +376,28 @@ def _get(url, headers, params, retries=5):
     sys.exit("Still rate limited (429) after retries.")
 
 
-def fetch_packages(statuses, days=7, order_number=None, seller=None):
+def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=None):
     """Packages of one seller, or of ALL configured sellers when seller is None."""
+    if max_orders is not None and (
+        not isinstance(max_orders, int) or isinstance(max_orders, bool) or max_orders < 1
+    ):
+        raise ValueError("max_orders must be a positive integer.")
+
     if seller is None:
         out = []
         for sl in get_sellers():
-            out.extend(fetch_packages(statuses, days, order_number, seller=sl))
+            remaining_orders = None if max_orders is None else max_orders - len(out)
+            if remaining_orders is not None and remaining_orders <= 0:
+                break
+            out.extend(
+                fetch_packages(
+                    statuses,
+                    days,
+                    order_number,
+                    seller=sl,
+                    max_orders=remaining_orders,
+                )
+            )
         return out
 
     sid, headers = api_headers(seller)
@@ -419,9 +435,18 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None):
                         seen.add(pid)
                         p["_seller"] = {"id": seller["id"], "name": seller["name"], "cargo": seller.get("cargo", "DHLECOMMP")}
                         packages.append(p)
-                if page + 1 >= data.get("totalPages", 1):
+                        if max_orders is not None and len(packages) >= max_orders:
+                            break
+                if (
+                    (max_orders is not None and len(packages) >= max_orders)
+                    or page + 1 >= data.get("totalPages", 1)
+                ):
                     break
                 page += 1
+            if max_orders is not None and len(packages) >= max_orders:
+                break
+        if max_orders is not None and len(packages) >= max_orders:
+            break
     from core.logger import log
 
     log(
