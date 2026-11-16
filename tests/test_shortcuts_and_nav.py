@@ -17,14 +17,15 @@ class TestNavigationAndShell(unittest.TestCase):
         self.window.close()
 
     def test_navigation_across_all_pages(self):
-        self.assertEqual(len(self.window._pages), 7)
-        self.assertEqual(self.window.tabs.count(), 7)
+        self.assertEqual(len(self.window._pages), 8)
+        self.assertEqual(self.window.tabs.count(), 8)
 
         expected_titles = [
             "Overview",
             "Orders & Labels",
             "Seller Config",
             "Product Catalog",
+            "Stock Management",
             "Reports",
             "Activity Logs",
             "Settings",
@@ -41,9 +42,10 @@ class TestNavigationAndShell(unittest.TestCase):
         self.assertIn("Siparişler", self.window.nav_buttons[1].text())
         self.assertIn("Satıcı", self.window.nav_buttons[2].text())
         self.assertIn("Kataloğu", self.window.nav_buttons[3].text())
-        self.assertIn("Raporlar", self.window.nav_buttons[4].text())
-        self.assertIn("Sistem Kayıtları", self.window.nav_buttons[5].text())
-        self.assertIn("Ayarlar", self.window.nav_buttons[6].text())
+        self.assertIn("Stok Yönetimi", self.window.nav_buttons[4].text())
+        self.assertIn("Raporlar", self.window.nav_buttons[5].text())
+        self.assertIn("Sistem Kayıtları", self.window.nav_buttons[6].text())
+        self.assertIn("Ayarlar", self.window.nav_buttons[7].text())
 
         self.window.set_language("en")
         self.assertIn("Overview", self.window.nav_buttons[0].text())

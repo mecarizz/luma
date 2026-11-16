@@ -22,6 +22,12 @@ Use the **Product Catalog** tab to search and filter products, add or edit
 catalog entries, and remove products. Catalog edits are saved locally with
 automatic backups.
 
+Use **Stock Management** to fetch approved, live inventory for one configured
+seller and edit stock quantities. Luma asks for confirmation before submitting
+changes to Trendyol; it does not change the local product catalog. Trendyol
+allows up to 1,000 SKU updates per request and a sellable quantity of up to
+20,000 per SKU. The seller's API credentials must have product/inventory access.
+
 The desktop app starts monitoring enabled sellers automatically. Depending on
 their settings, it may change cargo providers and print labels. For a safe
 standalone watcher check, use:
