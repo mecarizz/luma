@@ -32,12 +32,16 @@ class AppController:
 
         self.ui.tab_sellers.set_manager(self.seller_manager)
         self.ui.tab_orders.set_manager(self.seller_manager)
+        self.ui.tab_bookkeeping.set_manager(self.seller_manager)
         self.ui.tab_stock.set_manager(self.seller_manager)
         if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "set_seller_manager"):
             self.ui.tab_dashboard.set_seller_manager(self.seller_manager)
         self.ui.tab_orders.log_emitted.connect(self.ui.tab_logs.append_log)
+        self.ui.tab_bookkeeping.log_emitted.connect(self.ui.tab_logs.append_log)
         self.ui.tab_orders.operation_started.connect(self.pause_watcher)
         self.ui.tab_orders.operation_finished.connect(self.resume_watcher)
+        self.ui.tab_bookkeeping.operation_started.connect(self.pause_watcher)
+        self.ui.tab_bookkeeping.operation_finished.connect(self.resume_watcher)
         self.ui.tab_stock.operation_started.connect(self.pause_watcher)
         self.ui.tab_stock.operation_finished.connect(self.resume_watcher)
         self.ui.tab_sellers.seller_configuration_changed.connect(self.refresh_workers)
@@ -75,6 +79,7 @@ class AppController:
         if self.worker is not None:
             self.worker.set_profiles(self.seller_manager.list_all())
         self.ui.tab_orders.refresh_sellers()
+        self.ui.tab_bookkeeping.refresh_sellers()
         self.ui.tab_stock.refresh_sellers()
         self._update_active_seller_count()
         if hasattr(self.ui, "tab_dashboard") and hasattr(self.ui.tab_dashboard, "refresh_metrics"):

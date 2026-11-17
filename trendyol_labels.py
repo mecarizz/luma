@@ -376,12 +376,28 @@ def _get(url, headers, params, retries=5):
     sys.exit("Still rate limited (429) after retries.")
 
 
-def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=None):
+def fetch_packages(
+    statuses,
+    days: float = 7,
+    order_number=None,
+    seller=None,
+    max_orders=None,
+    start_date=None,
+    end_date=None,
+):
     """Packages of one seller, or of ALL configured sellers when seller is None."""
     if max_orders is not None and (
         not isinstance(max_orders, int) or isinstance(max_orders, bool) or max_orders < 1
     ):
         raise ValueError("max_orders must be a positive integer.")
+    if (start_date is None) != (end_date is None):
+        raise ValueError("start_date and end_date must be provided together.")
+    if start_date is not None and (
+        not isinstance(start_date, datetime)
+        or not isinstance(end_date, datetime)
+        or start_date >= end_date
+    ):
+        raise ValueError("The order date range must have a valid start before its end.")
 
     if seller is None:
         out = []
@@ -396,6 +412,8 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=
                     order_number,
                     seller=sl,
                     max_orders=remaining_orders,
+                    start_date=start_date,
+                    end_date=end_date,
                 )
             )
         return out
@@ -404,8 +422,12 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=
     url = orders_url(sid)
     packages, seen = [], set()
 
-    end = datetime.now()
-    start = end - timedelta(days=days)
+    if start_date is None:
+        end = datetime.now()
+        start = end - timedelta(days=days)
+    else:
+        start = start_date
+        end = end_date
     windows = []
     cur = start
     while cur < end:
@@ -413,12 +435,13 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=
         windows.append((cur, nxt))
         cur = nxt
 
-    for status in statuses:
+    status_values = [None] if statuses is None else list(statuses)
+    status_text = "all" if statuses is None else ",".join(status_values)
+    for status in status_values:
         for w_start, w_end in windows:
             page = 0
             while page <= MAX_PAGE_INDEX:
                 params = {
-                    "status": status,
                     "startDate": int(w_start.timestamp() * 1000),
                     "endDate": int(w_end.timestamp() * 1000),
                     "orderByField": "PackageLastModifiedDate",
@@ -426,6 +449,8 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=
                     "size": PAGE_SIZE,
                     "page": page,
                 }
+                if status is not None:
+                    params["status"] = status
                 if order_number:
                     params["orderNumber"] = order_number
                 data = _get(url, headers, params)
@@ -451,7 +476,7 @@ def fetch_packages(statuses, days=7, order_number=None, seller=None, max_orders=
 
     log(
         f"Trendyol order fetch complete: seller={seller_tag(seller)} "
-        f"statuses={','.join(statuses)} packages={len(packages)}"
+        f"statuses={status_text} packages={len(packages)}"
     )
     return packages
 

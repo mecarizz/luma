@@ -207,11 +207,17 @@ class _FetchOrdersWorker(QThread):
         profiles: Iterable[SellerProfile],
         lookback_days: Optional[int] = None,
         max_orders: Optional[int] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        all_statuses: bool = False,
     ):
         super().__init__()
         self.profiles = list(profiles)
         self.lookback_days = lookback_days
         self.max_orders = max_orders
+        self.start_date = start_date
+        self.end_date = end_date
+        self.all_statuses = all_statuses
 
     def run(self) -> None:
         packages: List[Dict[str, Any]] = []
@@ -240,19 +246,34 @@ class _FetchOrdersWorker(QThread):
                     if self.lookback_days is not None
                     else profile.lookback_hours / 24
                 )
+                statuses = None if self.all_statuses else profile.statuses
+                status_text = "all" if statuses is None else ",".join(statuses)
+                range_text = (
+                    f"{self.start_date.isoformat()} to {self.end_date.isoformat()}"
+                    if self.start_date is not None and self.end_date is not None
+                    else f"last {lookback_days} days"
+                )
                 try:
                     logger.info(
-                        "[%s] Manual order fetch started: statuses=%s lookback_days=%s max_orders=%s",
+                        "[%s] Manual order fetch started: statuses=%s date_range=%s max_orders=%s",
                         profile.display_tag,
-                        ",".join(profile.statuses),
-                        lookback_days,
+                        status_text,
+                        range_text,
                         remaining_orders,
                     )
                     found = labels.fetch_packages(
-                        profile.statuses,
+                        statuses,
                         lookback_days,
                         seller=_api_seller(profile),
                         **({"max_orders": remaining_orders} if remaining_orders is not None else {}),
+                        **(
+                            {
+                                "start_date": self.start_date,
+                                "end_date": self.end_date,
+                            }
+                            if self.start_date is not None and self.end_date is not None
+                            else {}
+                        ),
                     )
                     packages.extend(found)
                     logger.info(

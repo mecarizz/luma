@@ -42,6 +42,11 @@ or a carrier from the custom selection. Luma switches the selected packages in
 Trendyol and refreshes them before printing so the labels use the new carrier's
 tracking barcodes. The automatic watcher pauses during these manual operations.
 
+Use **Bookkeeping** to fetch orders for an inclusive date range and see one
+compact row per purchased product, with the customer's name, district/city,
+product, and price. Longer ranges are split into Trendyol's supported request
+windows automatically.
+
 The application interface supports English and Turkish. Use the **Language**
 menu to change languages; the selection is saved for the next launch.
 Choose each seller's printer in **Seller Config**. The list comes from printers

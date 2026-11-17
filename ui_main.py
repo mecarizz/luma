@@ -34,6 +34,7 @@ from core.updates import (
 )
 from core.version import VERSION
 from ui_catalog import CatalogTab
+from ui_bookkeeping import BookkeepingTab
 from ui_components import StatusBadge
 from ui_dashboard import DashboardTab
 from ui_logs import LogsTab
@@ -122,6 +123,7 @@ class LumaMainWindow(QMainWindow):
 
         self.tab_dashboard = DashboardTab()
         self.tab_orders = OrdersTab()
+        self.tab_bookkeeping = BookkeepingTab()
         self.tab_sellers = SellersTab()
         self.tab_catalog = CatalogTab()
         self.tab_stock = StockTab()
@@ -132,6 +134,7 @@ class LumaMainWindow(QMainWindow):
         self._pages = [
             ("⌂", "Overview", self.tab_dashboard),
             ("▣", "Orders & Labels", self.tab_orders),
+            ("▤", "Bookkeeping", self.tab_bookkeeping),
             ("♙", "Seller Config", self.tab_sellers),
             ("▦", "Product Catalog", self.tab_catalog),
             ("▧", "Stock Management", self.tab_stock),
@@ -294,7 +297,7 @@ class LumaMainWindow(QMainWindow):
 
         QShortcut(QKeySequence("Ctrl+F"), self, self._on_shortcut_find)
         QShortcut(QKeySequence("Ctrl+R"), self, self._on_shortcut_refresh)
-        QShortcut(QKeySequence("Ctrl+,"), self, lambda: self.navigate(7))
+        QShortcut(QKeySequence("Ctrl+,"), self, lambda: self.navigate(8))
         QShortcut(QKeySequence("Esc"), self, self._on_shortcut_escape)
 
     def _on_shortcut_find(self) -> None:
@@ -302,13 +305,13 @@ class LumaMainWindow(QMainWindow):
         if curr == 1 and hasattr(self.tab_orders, "search_input"):
             self.tab_orders.search_input.setFocus()
             self.tab_orders.search_input.selectAll()
-        elif curr == 3 and hasattr(self.tab_catalog, "search"):
+        elif curr == 4 and hasattr(self.tab_catalog, "search"):
             self.tab_catalog.search.setFocus()
             self.tab_catalog.search.selectAll()
-        elif curr == 4 and hasattr(self.tab_stock, "search_input"):
+        elif curr == 5 and hasattr(self.tab_stock, "search_input"):
             self.tab_stock.search_input.setFocus()
             self.tab_stock.search_input.selectAll()
-        elif curr == 6 and hasattr(self.tab_logs, "search_input"):
+        elif curr == 7 and hasattr(self.tab_logs, "search_input"):
             self.tab_logs.search_input.setFocus()
             self.tab_logs.search_input.selectAll()
 
@@ -318,22 +321,24 @@ class LumaMainWindow(QMainWindow):
             self.tab_dashboard.refresh_metrics()
         elif curr == 1:
             self.tab_orders.fetch_orders()
-        elif curr == 3:
-            self.tab_catalog.refresh()
+        elif curr == 2:
+            self.tab_bookkeeping.fetch_orders()
         elif curr == 4:
-            self.tab_stock.refresh_inventory()
+            self.tab_catalog.refresh()
         elif curr == 5:
+            self.tab_stock.refresh_inventory()
+        elif curr == 6:
             self.tab_reports.refresh_report()
 
     def _on_shortcut_escape(self) -> None:
         curr = self.tabs.currentIndex()
         if curr == 1 and hasattr(self.tab_orders, "search_input"):
             self.tab_orders.search_input.clear()
-        elif curr == 3 and hasattr(self.tab_catalog, "search"):
+        elif curr == 4 and hasattr(self.tab_catalog, "search"):
             self.tab_catalog.search.clear()
-        elif curr == 4 and hasattr(self.tab_stock, "search_input"):
+        elif curr == 5 and hasattr(self.tab_stock, "search_input"):
             self.tab_stock.search_input.clear()
-        elif curr == 6 and hasattr(self.tab_logs, "search_input"):
+        elif curr == 7 and hasattr(self.tab_logs, "search_input"):
             self.tab_logs.search_input.clear()
 
     def navigate(self, index: int) -> None:
@@ -648,6 +653,7 @@ class LumaMainWindow(QMainWindow):
 
         self.tab_dashboard.set_language(language)
         self.tab_orders.set_language(language)
+        self.tab_bookkeeping.set_language(language)
         self.tab_sellers.set_language(language)
         self.tab_catalog.set_language(language)
         self.tab_stock.set_language(language)
@@ -688,6 +694,17 @@ class LumaMainWindow(QMainWindow):
             event.ignore()
             return
         if hasattr(self, "tab_orders") and not self.tab_orders.stop_worker():
+            QMessageBox.information(
+                self,
+                tr("Operation in progress", self.language),
+                tr(
+                    "The order operation is still running. Please wait for it to finish before closing Luma.",
+                    self.language,
+                ),
+            )
+            event.ignore()
+            return
+        if hasattr(self, "tab_bookkeeping") and not self.tab_bookkeeping.stop_worker():
             QMessageBox.information(
                 self,
                 tr("Operation in progress", self.language),
