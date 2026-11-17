@@ -49,6 +49,24 @@ class TestBookkeepingRows(unittest.TestCase):
             [("—", "—", "BC-1", "—")],
         )
 
+    def test_orders_rows_newest_order_date_first(self):
+        packages = [
+            {
+                "orderDate": 1000,
+                "shipmentAddress": {"fullName": "Older"},
+                "lines": [{"productName": "Older item", "price": 1}],
+            },
+            {
+                "orderDate": 2000,
+                "shipmentAddress": {"fullName": "Newer"},
+                "lines": [{"productName": "Newer item", "price": 2}],
+            },
+        ]
+
+        rows = _bookkeeping_rows(packages)
+
+        self.assertEqual([row[0] for row in rows], ["Newer", "Older"])
+
 
 class TestBookkeepingTab(unittest.TestCase):
     @classmethod
@@ -75,6 +93,42 @@ class TestBookkeepingTab(unittest.TestCase):
             worker_type.call_args.kwargs["end_date"],
             datetime(2026, 11, 3, 23, 59, 59, 999000),
         )
+
+    def test_search_filters_and_highlights_matching_rows(self):
+        tab = BookkeepingTab()
+        self.addCleanup(tab.close)
+        tab._on_orders_fetched(
+            (
+                [
+                    {
+                        "orderDate": 1,
+                        "shipmentAddress": {"fullName": "Alice"},
+                        "lines": [{"productName": "Blue blanket", "price": 10}],
+                    },
+                    {
+                        "orderDate": 2,
+                        "shipmentAddress": {"fullName": "Bob"},
+                        "lines": [{"productName": "Red pillow", "price": 20}],
+                    },
+                ],
+                [],
+            )
+        )
+
+        tab._apply_filter("alice")
+
+        self.assertTrue(tab.order_table.isRowHidden(0))
+        self.assertFalse(tab.order_table.isRowHidden(1))
+        self.assertEqual(
+            tab.order_table.item(1, 0).background().color().name(),
+            "#134e4a",
+        )
+        self.assertIn("1 matching line", tab.status_label.text())
+
+        tab._apply_filter("")
+        self.assertFalse(tab.order_table.isRowHidden(0))
+        self.assertFalse(tab.order_table.isRowHidden(1))
+        self.assertIn("2 bookkeeping line", tab.status_label.text())
 
 
 if __name__ == "__main__":

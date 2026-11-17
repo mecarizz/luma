@@ -45,7 +45,8 @@ tracking barcodes. The automatic watcher pauses during these manual operations.
 Use **Bookkeeping** to fetch orders for an inclusive date range and see one
 compact row per purchased product, with the customer's name, district/city,
 product, and price. Longer ranges are split into Trendyol's supported request
-windows automatically.
+windows automatically. Results are ordered newest first; press **Ctrl+F** to
+find and highlight matching customers, addresses, products, or prices.
 
 The application interface supports English and Turkish. Use the **Language**
 menu to change languages; the selection is saved for the next launch.

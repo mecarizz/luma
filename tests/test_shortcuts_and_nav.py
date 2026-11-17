@@ -52,6 +52,34 @@ class TestNavigationAndShell(unittest.TestCase):
         self.window.set_language("en")
         self.assertIn("Overview", self.window.nav_buttons[0].text())
 
+    def test_ctrl_f_and_escape_control_bookkeeping_search(self):
+        self.window.show()
+        self.window.navigate(2)
+        self.window.tab_bookkeeping._on_orders_fetched(
+            (
+                [
+                    {
+                        "shipmentAddress": {"fullName": "Alice"},
+                        "lines": [{"productName": "Blue blanket", "price": 10}],
+                    }
+                ],
+                [],
+            )
+        )
+        self.window.tab_bookkeeping._update_enabled()
+        self.window.tab_bookkeeping.search_input.setText("Alice")
+        self.app.processEvents()
+
+        self.window._on_shortcut_find()
+        self.assertTrue(self.window.tab_bookkeeping.search_input.hasFocus())
+        self.assertEqual(
+            self.window.tab_bookkeeping.search_input.selectedText(),
+            "Alice",
+        )
+
+        self.window._on_shortcut_escape()
+        self.assertEqual(self.window.tab_bookkeeping.search_input.text(), "")
+
     def test_monitoring_state_visual_indicators(self):
         self.window.set_monitoring_state(True)
         self.assertIn("ACTIVE", self.window.status_pill_badge.text())

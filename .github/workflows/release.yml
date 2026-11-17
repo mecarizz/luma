@@ -51,7 +51,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          body: "${{ github.ref_name == 'v1.2.2' && 'Luma-Update-Level: 3' || github.ref_name == 'v1.3.0' && 'Luma-Update-Level: 2' || github.ref_name == 'v1.3.1' && 'Luma-Update-Level: 1' || github.ref_name == 'v1.3.2' && 'Luma-Update-Level: 1' || '' }}"
+          body: "${{ github.ref_name == 'v1.2.2' && 'Luma-Update-Level: 3' || github.ref_name == 'v1.3.0' && 'Luma-Update-Level: 2' || github.ref_name == 'v1.3.1' && 'Luma-Update-Level: 1' || github.ref_name == 'v1.3.2' && 'Luma-Update-Level: 1' || github.ref_name == 'v1.3.3' && 'Luma-Update-Level: 1' || '' }}"
           generate_release_notes: true
           files: |
             project_extras/dist/Luma-windows-x64.zip

@@ -305,6 +305,9 @@ class LumaMainWindow(QMainWindow):
         if curr == 1 and hasattr(self.tab_orders, "search_input"):
             self.tab_orders.search_input.setFocus()
             self.tab_orders.search_input.selectAll()
+        elif curr == 2 and hasattr(self.tab_bookkeeping, "search_input"):
+            self.tab_bookkeeping.search_input.setFocus()
+            self.tab_bookkeeping.search_input.selectAll()
         elif curr == 4 and hasattr(self.tab_catalog, "search"):
             self.tab_catalog.search.setFocus()
             self.tab_catalog.search.selectAll()
@@ -334,6 +337,8 @@ class LumaMainWindow(QMainWindow):
         curr = self.tabs.currentIndex()
         if curr == 1 and hasattr(self.tab_orders, "search_input"):
             self.tab_orders.search_input.clear()
+        elif curr == 2 and hasattr(self.tab_bookkeeping, "search_input"):
+            self.tab_bookkeeping.search_input.clear()
         elif curr == 4 and hasattr(self.tab_catalog, "search"):
             self.tab_catalog.search.clear()
         elif curr == 5 and hasattr(self.tab_stock, "search_input"):

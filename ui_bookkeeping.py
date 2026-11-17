@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from core.i18n import tr
 from core.seller_models import SellerProfile
-from ui_components import SectionHeader
+from ui_components import SearchInput, SectionHeader
 from ui_orders import _FetchOrdersWorker
 
 
@@ -41,11 +42,28 @@ def _format_price(value: object, quantity: int = 1) -> str:
     return formatted.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
+def _order_timestamp(package: Dict[str, Any]) -> float:
+    for field in ("orderDate", "packageLastModifiedDate"):
+        value = package.get(field)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return float("-inf")
+
+
 def _bookkeeping_rows(
     packages: Iterable[Dict[str, Any]],
 ) -> List[Tuple[str, str, str, str]]:
     rows = []
-    for package in packages:
+    ordered_packages = sorted(
+        packages,
+        key=_order_timestamp,
+        reverse=True,
+    )
+    for package in ordered_packages:
         address = package.get("shipmentAddress") or {}
         customer = str(address.get("fullName") or "—").strip() or "—"
         district = str(address.get("district") or "").strip()
@@ -91,6 +109,8 @@ class BookkeepingTab(QWidget):
         self._worker: Optional[_FetchOrdersWorker] = None
         self._status_template = "Choose a date range and fetch orders."
         self._status_values: Dict[str, Any] = {}
+        self._loaded_order_count = 0
+        self._loaded_line_count = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -146,6 +166,13 @@ class BookkeepingTab(QWidget):
         controls_layout.addWidget(self.fetch_button)
         layout.addWidget(controls)
 
+        self.search_input = SearchInput(
+            placeholder="Find customer, address, product, or price...",
+            debounce_ms=150,
+        )
+        self.search_input.debounced_text_changed.connect(self._apply_filter)
+        layout.addWidget(self.search_input)
+
         self.status_label = QLabel("Choose a date range and fetch orders.")
         self.status_label.setStyleSheet("color: #94a3b8; font-size: 9.5pt;")
         layout.addWidget(self.status_label)
@@ -173,6 +200,9 @@ class BookkeepingTab(QWidget):
         self.end_date_label.setText(tr("To:", self.language))
         self.max_orders_label.setText(tr("Maximum orders:", self.language))
         self.fetch_button.setText(tr("Fetch Orders", self.language))
+        self.search_input.setPlaceholderText(
+            tr("Find customer, address, product, or price...", self.language)
+        )
         self.order_table.setHorizontalHeaderLabels(
             [tr(header, self.language) for header in self.HEADERS]
         )
@@ -268,16 +298,51 @@ class BookkeepingTab(QWidget):
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 self.order_table.setItem(row, column, item)
 
+        self._loaded_order_count = len(packages)
+        self._loaded_line_count = len(rows)
         self._set_status(
             "Loaded {orders} orders as {items} bookkeeping line(s).",
             orders=len(packages),
             items=len(rows),
         )
+        self._apply_filter(self.search_input.text())
         if errors:
             QMessageBox.warning(
                 self,
                 tr("Some orders could not be fetched", self.language),
                 "\n".join(errors),
+            )
+
+    def _apply_filter(self, query: str = "") -> None:
+        normalized_query = query.strip().casefold()
+        matching_rows = 0
+        for row in range(self.order_table.rowCount()):
+            row_text = " ".join(
+                self.order_table.item(row, column).text()
+                for column in range(self.order_table.columnCount())
+                if self.order_table.item(row, column) is not None
+            ).casefold()
+            matches = not normalized_query or normalized_query in row_text
+            self.order_table.setRowHidden(row, not matches)
+            if matches:
+                matching_rows += 1
+            for column in range(self.order_table.columnCount()):
+                item = self.order_table.item(row, column)
+                if item is not None:
+                    item.setBackground(
+                        QColor("#134e4a") if normalized_query and matches else QColor()
+                    )
+        if normalized_query:
+            self._set_status(
+                "{matches} matching line(s) out of {total}.",
+                matches=matching_rows,
+                total=self._loaded_line_count,
+            )
+        elif self._loaded_order_count or self._loaded_line_count:
+            self._set_status(
+                "Loaded {orders} orders as {items} bookkeeping line(s).",
+                orders=self._loaded_order_count,
+                items=self._loaded_line_count,
             )
 
     def _on_worker_finished(self) -> None:
@@ -292,6 +357,7 @@ class BookkeepingTab(QWidget):
         self.end_date_input.setEnabled(not busy)
         self.max_orders_input.setEnabled(not busy)
         self.fetch_button.setEnabled(not busy and bool(self._profiles))
+        self.search_input.setEnabled(not busy and self.order_table.rowCount() > 0)
 
     def stop_worker(self) -> bool:
         if self._worker is not None and self._worker.isRunning():

@@ -96,6 +96,8 @@ _TURKISH: Dict[str, str] = {
     "Fetch Orders": "Siparişleri Getir",
     "Bookkeeping": "Muhasebe",
     "Fetch order line items for a date range with only the details you need.": "İhtiyacınız olan temel bilgilerle seçilen tarih aralığındaki sipariş kalemlerini getirin.",
+    "Find customer, address, product, or price...": "Müşteri, adres, ürün veya fiyat ara...",
+    "{matches} matching line(s) out of {total}.": "{total} satırdan {matches} eşleşen satır.",
     "From:": "Başlangıç:",
     "To:": "Bitiş:",
     "Choose a date range and fetch orders.": "Bir tarih aralığı seçip siparişleri getirin.",
