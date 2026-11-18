@@ -59,6 +59,7 @@ from reportlab.pdfgen import canvas
 from core.catalog import ProductCatalog
 from core.classifier import OutsourcedClassifier
 from core.config import DEFAULT_SUMATRA_PATH
+from core.logger import get_logger
 from core.paths import get_data_path
 from core.unknown_tracker import UnknownProductTracker
 
@@ -103,6 +104,13 @@ def fmt_ts(ms):
         return datetime.fromtimestamp(int(ms) / 1000, TR_TZ).strftime("%d.%m.%Y %H:%M")
     except (TypeError, ValueError, OSError):
         return ""
+
+
+def _order_timestamp(pkg):
+    order_date = pkg.get("orderDate")
+    if order_date:
+        return "orderDate", order_date
+    return "packageLastModifiedDate", pkg.get("packageLastModifiedDate")
 
 
 def seller_label(pkg):
@@ -664,7 +672,8 @@ def draw_label(c, pkg, W, H, opts, label_number=None):
     if getattr(opts, "show_seller", True) and seller_label(pkg):
         parts.append(seller_label(pkg))
     stamp = getattr(opts, "stamp", "both")
-    order_ts = fmt_ts(pkg.get("orderDate") or pkg.get("packageLastModifiedDate")) if stamp in ("both", "order") else ""
+    _, timestamp_value = _order_timestamp(pkg)
+    order_ts = fmt_ts(timestamp_value) if stamp in ("both", "order") else ""
     if order_ts:
         parts.append("SİP " + order_ts)
     if stamp in ("both", "print"):
@@ -790,10 +799,23 @@ def build_pdf(packages, out_path, opts, label_numbers=None):
     W, H = opts.w * mm, opts.h * mm
     c = canvas.Canvas(out_path, pagesize=(W, H))
     c.setTitle("Trendyol labels")
+    logger = None
+    stamp = getattr(opts, "stamp", "both")
     for pkg in packages:
         label_number = None
         if label_numbers is not None:
             label_number = label_numbers.get(str(pkg.get("shipmentPackageId")))
+        if label_number is not None and stamp in ("both", "order"):
+            timestamp_source, timestamp_value = _order_timestamp(pkg)
+            if timestamp_value is not None:
+                if logger is None:
+                    logger = get_logger()
+                logger.info(
+                    "Label order timestamp: source=%s raw=%r formatted=%s",
+                    timestamp_source,
+                    timestamp_value,
+                    fmt_ts(timestamp_value),
+                )
         draw_label(c, pkg, W, H, opts, label_number)
         c.showPage()
     c.save()

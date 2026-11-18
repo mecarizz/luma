@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from core import label_sequence
 import trendyol_labels as labels
@@ -62,6 +62,46 @@ class TestLabelSequence(unittest.TestCase):
             98 * mm,
             options,
             None,
+        )
+
+    def test_build_pdf_logs_timestamp_source_for_printed_labels_only(self):
+        order_date = 1_795_010_160_000
+        last_modified = 1_794_999_360_000
+        packages = [
+            {"shipmentPackageId": 501, "orderDate": order_date},
+            {
+                "shipmentPackageId": 502,
+                "packageLastModifiedDate": last_modified,
+            },
+        ]
+        options = SimpleNamespace(w=99, h=98, stamp="both")
+        with patch.object(labels.canvas, "Canvas"):
+            with patch.object(labels, "draw_label"):
+                with patch.object(labels, "get_logger") as get_logger:
+                    labels.build_pdf(
+                        packages,
+                        "unused.pdf",
+                        options,
+                        label_numbers={"501": 1, "502": 2},
+                    )
+
+        logger = get_logger.return_value
+        self.assertEqual(
+            logger.info.call_args_list,
+            [
+                call(
+                    "Label order timestamp: source=%s raw=%r formatted=%s",
+                    "orderDate",
+                    order_date,
+                    labels.fmt_ts(order_date),
+                ),
+                call(
+                    "Label order timestamp: source=%s raw=%r formatted=%s",
+                    "packageLastModifiedDate",
+                    last_modified,
+                    labels.fmt_ts(last_modified),
+                ),
+            ],
         )
 
     def test_number_badge_is_kept_clear_of_barcode_even_without_shift(self):
