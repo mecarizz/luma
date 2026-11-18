@@ -11,6 +11,13 @@ from reportlab.lib.units import mm
 
 
 class TestLabelSequence(unittest.TestCase):
+    def test_order_date_matches_the_time_shown_by_trendyol(self):
+        package = {"orderDate": 1_795_015_529_176}
+        self.assertEqual(
+            labels._formatted_order_timestamp(package),
+            ("orderDate", 1_795_015_529_176, "18.11.2026 15:25"),
+        )
+
     def test_sequence_persists_reuses_package_numbers_and_resets_at_11pm(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(
@@ -93,13 +100,13 @@ class TestLabelSequence(unittest.TestCase):
                     "Label order timestamp: source=%s raw=%r formatted=%s",
                     "orderDate",
                     order_date,
-                    labels.fmt_ts(order_date),
+                    labels._formatted_order_timestamp(packages[0])[2],
                 ),
                 call(
                     "Label order timestamp: source=%s raw=%r formatted=%s",
                     "packageLastModifiedDate",
                     last_modified,
-                    labels.fmt_ts(last_modified),
+                    labels._formatted_order_timestamp(packages[1])[2],
                 ),
             ],
         )

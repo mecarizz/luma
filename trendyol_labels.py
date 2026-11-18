@@ -99,9 +99,9 @@ def register_font(path=None):
 TR_TZ = timezone(timedelta(hours=3))      # Turkey: UTC+3 all year
 
 
-def fmt_ts(ms):
+def fmt_ts(ms, tz=TR_TZ):
     try:
-        return datetime.fromtimestamp(int(ms) / 1000, TR_TZ).strftime("%d.%m.%Y %H:%M")
+        return datetime.fromtimestamp(int(ms) / 1000, tz).strftime("%d.%m.%Y %H:%M")
     except (TypeError, ValueError, OSError):
         return ""
 
@@ -111,6 +111,13 @@ def _order_timestamp(pkg):
     if order_date:
         return "orderDate", order_date
     return "packageLastModifiedDate", pkg.get("packageLastModifiedDate")
+
+
+def _formatted_order_timestamp(pkg):
+    source, value = _order_timestamp(pkg)
+    # Trendyol's orderDate epoch already matches the order time shown in its UI.
+    tz = timezone.utc if source == "orderDate" else TR_TZ
+    return source, value, fmt_ts(value, tz)
 
 
 def seller_label(pkg):
@@ -672,8 +679,9 @@ def draw_label(c, pkg, W, H, opts, label_number=None):
     if getattr(opts, "show_seller", True) and seller_label(pkg):
         parts.append(seller_label(pkg))
     stamp = getattr(opts, "stamp", "both")
-    _, timestamp_value = _order_timestamp(pkg)
-    order_ts = fmt_ts(timestamp_value) if stamp in ("both", "order") else ""
+    _, _, order_ts = _formatted_order_timestamp(pkg)
+    if stamp not in ("both", "order"):
+        order_ts = ""
     if order_ts:
         parts.append("SİP " + order_ts)
     if stamp in ("both", "print"):
@@ -806,7 +814,7 @@ def build_pdf(packages, out_path, opts, label_numbers=None):
         if label_numbers is not None:
             label_number = label_numbers.get(str(pkg.get("shipmentPackageId")))
         if label_number is not None and stamp in ("both", "order"):
-            timestamp_source, timestamp_value = _order_timestamp(pkg)
+            timestamp_source, timestamp_value, formatted_timestamp = _formatted_order_timestamp(pkg)
             if timestamp_value is not None:
                 if logger is None:
                     logger = get_logger()
@@ -814,7 +822,7 @@ def build_pdf(packages, out_path, opts, label_numbers=None):
                     "Label order timestamp: source=%s raw=%r formatted=%s",
                     timestamp_source,
                     timestamp_value,
-                    fmt_ts(timestamp_value),
+                    formatted_timestamp,
                 )
         draw_label(c, pkg, W, H, opts, label_number)
         c.showPage()
