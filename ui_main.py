@@ -6,7 +6,7 @@ import time
 from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QThread, QTimer, Signal, Qt
+from PySide6.QtCore import QLockFile, QSettings, QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -73,6 +73,18 @@ class _UpdateDownloadWorker(QThread):
             )
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+def _try_acquire_instance_lock(
+    lock_path: Path, timeout_ms: int = 5000
+) -> QLockFile | None:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    instance_lock = QLockFile(str(lock_path))
+    if instance_lock.tryLock(timeout_ms):
+        return instance_lock
+    if instance_lock.error() == QLockFile.LockError.LockFailedError:
+        return None
+    raise OSError(f"Could not acquire the single-instance lock: {instance_lock.error()}")
 
 
 class LumaMainWindow(QMainWindow):
@@ -729,6 +741,33 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     apply_dark_palette(app)
+    language = QSettings("Luma", "Luma").value("language", "en")
+    if language not in ("en", "tr"):
+        language = "en"
+    try:
+        instance_lock = _try_acquire_instance_lock(
+            get_data_path("luma.instance.lock")
+        )
+    except OSError as exc:
+        QMessageBox.critical(
+            None,
+            tr("Luma startup failed", language),
+            tr(
+                "Could not enforce the single-instance rule:\n{error}",
+                language,
+            ).format(error=exc),
+        )
+        sys.exit(1)
+    if instance_lock is None:
+        QMessageBox.information(
+            None,
+            tr("Luma is already running", language),
+            tr(
+                "Another instance of Luma is already running. Close it before starting Luma again.",
+                language,
+            ),
+        )
+        sys.exit(0)
     window = LumaMainWindow()
     window.show()
     sys.exit(app.exec())

@@ -10,6 +10,10 @@ SUPPORTED_LANGUAGES = ("en", "tr")
 
 _TURKISH: Dict[str, str] = {
     "Luma Multi-Seller Manager": "Luma Çoklu Satıcı Yöneticisi",
+    "Luma startup failed": "Luma başlatılamadı",
+    "Could not enforce the single-instance rule:\n{error}": "Tek örnek kuralı uygulanamadı:\n{error}",
+    "Luma is already running": "Luma zaten çalışıyor",
+    "Another instance of Luma is already running. Close it before starting Luma again.": "Luma'nın başka bir örneği zaten çalışıyor. Luma'yı yeniden başlatmadan önce mevcut örneği kapatın.",
     "Dashboard": "Genel Bakış",
     "Orders & Labels": "Siparişler ve Etiketler",
     "Seller Config": "Satıcı Ayarları",
