@@ -13,6 +13,8 @@ outsourced_labels/<date>/<date>_<Customer>_<PRODUCT>.pdf instead (ready to send 
 If an order mixes outsourced and in-stock products it is printed AND saved (change with --mixed).
 
 Each package is handled once; progress is kept in printed_packages.json.
+Printed package labels get a persistent number that resets at 23:00 Turkey time.
+Preview and outsourced PDFs are not numbered.
 Put trendyol_labels.py in the same folder. It uses the same .env file.
 
 .env: one block per seller (see trendyol_labels.py), plus
@@ -49,6 +51,7 @@ from core.config import (
     DEFAULT_SUMATRA_PATH,
 )
 from core.logger import log, setup_logger
+from core.label_sequence import reserve_print_numbers
 from core.paths import get_data_path
 
 DHL_CODE = "DHLECOMMP"
@@ -235,11 +238,11 @@ def send_to_printer(pdf_path, printer):
         return False
 
 
-def make_label_pdf(packages, opts):
+def make_label_pdf(packages, opts, label_numbers=None):
     os.makedirs(OUT_DIR, exist_ok=True)
     sid = (packages[0].get("_seller") or {}).get("id", "x")      # keeps two sellers' batches apart
     path = os.path.join(OUT_DIR, f"batch_{datetime.now():%Y%m%d_%H%M%S}_{sid}.pdf")
-    tl.build_pdf(packages, path, opts.label)
+    tl.build_pdf(packages, path, opts.label, label_numbers)
     return path
 
 
@@ -372,7 +375,10 @@ def poll_once(opts, state, attempts, seller, baseline_only=False, on_processed=N
 
     printed_ok = set()
     if to_print:
-        pdf = make_label_pdf(to_print, opts)
+        label_numbers = None
+        if not opts.no_print:
+            label_numbers = reserve_print_numbers(to_print)
+        pdf = make_label_pdf(to_print, opts, label_numbers)
         if opts.no_print or send_to_printer(pdf, opts.printer):
             printed_ok = {pid_of(p) for p in to_print}
             log(f"{'Saved' if opts.no_print else 'Printed'} {len(to_print)} label(s): {pdf}")

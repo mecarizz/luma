@@ -615,12 +615,34 @@ def wrap(text, max_width, size, max_lines):
     return lines
 
 
-def draw_label(c, pkg, W, H, opts):
+def draw_label(c, pkg, W, H, opts, label_number=None):
     m = 4 * mm
     inner_w = W - 2 * m
     # opts.shift_y pushes the whole design down (for printers that start printing early);
     # everything below is laid out from this lower starting line, so nothing gets clipped.
     y = H - m - opts.shift_y * mm
+    if label_number is not None:
+        number_text = str(label_number)
+        badge_h = 7 * mm
+        badge_w = min(
+            inner_w,
+            max(9 * mm, pdfmetrics.stringWidth(number_text, FONT_NAME, 10) + 3 * mm),
+        )
+        badge_x = m
+        badge_y = H - m - badge_h
+        y = min(y, badge_y - 1 * mm)
+
+        c.saveState()
+        c.setFillColorRGB(0, 0, 0)
+        c.rect(badge_x, badge_y, badge_w, badge_h, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont(FONT_NAME, 10)
+        c.drawCentredString(
+            badge_x + badge_w / 2,
+            badge_y + (badge_h - 10) / 2 + 2,
+            number_text,
+        )
+        c.restoreState()
 
     # --- cargo barcode ------------------------------------------------------
     tracking = str(pkg.get("cargoTrackingNumber") or "")
@@ -764,12 +786,15 @@ def draw_label(c, pkg, W, H, opts):
         c.drawRightString(W - m, m, str(pkg.get("cargoProviderName") or ""))
 
 
-def build_pdf(packages, out_path, opts):
+def build_pdf(packages, out_path, opts, label_numbers=None):
     W, H = opts.w * mm, opts.h * mm
     c = canvas.Canvas(out_path, pagesize=(W, H))
     c.setTitle("Trendyol labels")
     for pkg in packages:
-        draw_label(c, pkg, W, H, opts)
+        label_number = None
+        if label_numbers is not None:
+            label_number = label_numbers.get(str(pkg.get("shipmentPackageId")))
+        draw_label(c, pkg, W, H, opts, label_number)
         c.showPage()
     c.save()
 
@@ -990,7 +1015,12 @@ def main():
     print(f"Çift: {counts['ÇİFT']}  Tek: {counts['TEK']}  not detected: {counts[None]}"
           + ("" if not counts[None] else "  (run with --verbose to list them)"))
 
-    build_pdf(packages, opts.out, opts)
+    label_numbers = None
+    if opts.printer and not opts.preview:
+        from core.label_sequence import reserve_print_numbers
+
+        label_numbers = reserve_print_numbers(packages)
+    build_pdf(packages, opts.out, opts, label_numbers)
     print(f"{len(packages)} labels -> {opts.out}")
 
     if opts.printer and not opts.preview:

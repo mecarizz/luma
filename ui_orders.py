@@ -319,6 +319,7 @@ class _PrintOrdersWorker(QThread):
         try:
             import trendyol_labels as labels
             import trendyol_watcher as watcher
+            from core.label_sequence import reserve_print_numbers
 
             prepared: Dict[str, List[Dict[str, Any]]] = {}
             for package in self.packages:
@@ -347,9 +348,11 @@ class _PrintOrdersWorker(QThread):
                 profile = self.profiles[seller_id]
                 try:
                     labels.register_font()
+                    label_numbers = reserve_print_numbers(seller_packages)
                     pdf_path = watcher.make_label_pdf(
                         seller_packages,
                         SellerWorker._watcher_options(profile),
+                        label_numbers,
                     )
                     if watcher.send_to_printer(pdf_path, profile.printer_name):
                         printed_count += len(seller_packages)

@@ -20,6 +20,10 @@ venv/
 /outsourced_products.txt
 /unknown_products.json
 /printed_packages.json
+/label_sequence.json
+/label_sequence.json.tmp
+/label_sequence.lock
+/luma.instance.lock
 /watcher.log
 /labels_out/
 /outsourced_labels/

@@ -29,6 +29,7 @@ a = Analysis(
         "core.classifier",
         "core.config",
         "core.i18n",
+        "core.label_sequence",
         "core.logger",
         "core.manual_orders",
         "core.paths",
